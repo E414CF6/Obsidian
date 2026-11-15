@@ -1,0 +1,90 @@
+name: Obsidian
+version: '${version}'
+main: obsidian.ObsidianPlugin
+api-version: '26.3'
+folia-supported: true
+load: POSTWORLD
+softdepend: [ Vault, PlaceholderAPI, LuckPerms ]
+description: Modern Essentials
+
+permissions:
+  obsidian.admin:
+    description: Grants access to administrative Obsidian commands
+    default: op
+  obsidian.command:
+    description: Grants access to base /obsidian command
+    default: true
+  obsidian.teleport.safe:
+    description: Automatically adjusts unsafe teleport destinations to safe locations
+    default: true
+  obsidian.command.home.showlist:
+    description: Grants access to list/GUI homes
+    default: true
+  obsidian.command.warp.showlist:
+    description: Grants access to list/GUI warps
+    default: true
+  obsidian.sethome.unlimited:
+    description: Allows unlimited homes
+    default: op
+  obsidian.vanish.see:
+    description: Allows seeing vanished players
+    default: op
+  obsidian.chat.color:
+    description: Allows color/MiniMessage codes in chat
+    default: op
+  obsidian.chat.bypassfilter:
+    description: Bypasses chat anti-spam, caps, and word filters
+    default: op
+  obsidian.staffchat:
+    description: Access to staff chat (/staffmsg)
+    default: op
+  obsidian.socialspy:
+    description: Access to private message monitoring (/socialspy)
+    default: op
+  obsidian.protect.co:
+    description: Grants access to /co base command
+    default: op
+  obsidian.protect.inspect:
+    description: Grants access to /co inspect
+    default: op
+  obsidian.protect.lookup:
+    description: Grants access to /co lookup, /co near, and /co page
+    default: op
+  obsidian.protect.rollback:
+    description: Grants access to /co rollback, /co apply, /co cancel, and /co undo
+    default: op
+  obsidian.protect.restore:
+    description: Grants access to /co restore
+    default: op
+  obsidian.protect.purge:
+    description: Grants access to /co purge
+    default: op
+  obsidian.protect.status:
+    description: Grants access to /co status
+    default: op
+  obsidian.protect.consumer:
+    description: Grants access to /co consumer
+    default: op
+  obsidian.protect.teleport:
+    description: Grants access to /co teleport
+    default: op
+  obsidian.protect.reload:
+    description: Grants access to /co reload
+    default: op
+  obsidian.protect.*:
+    description: Grants access to all Obsidian Protect permissions
+    default: op
+    children:
+      obsidian.protect.co: true
+      obsidian.protect.inspect: true
+      obsidian.protect.lookup: true
+      obsidian.protect.rollback: true
+      obsidian.protect.restore: true
+      obsidian.protect.purge: true
+      obsidian.protect.status: true
+      obsidian.protect.consumer: true
+      obsidian.protect.teleport: true
+      obsidian.protect.reload: true
+  obsidian.stats.admin:
+    description: Grants access to /serve and /stats web API management commands
+    default: op

@@ -1,0 +1,244 @@
+# Obsidian Configuration
+
+language: ko
+
+storage:
+  # Supported: sqlite, mysql, mariadb
+  method: sqlite
+  auto-save-interval-seconds: 60
+  force-save-on-logout: true
+  sqlite:
+    file: obsidian.db
+  mysql:
+    host: localhost
+    port: 3306
+    database: minecraft
+    username: root
+    password: ""
+    table-prefix: obsidian_
+    use-ssl: false
+    pool-size: 10
+
+modules:
+  teleport: true
+  home: true
+  warp: true
+  utility: true
+  economy: true
+  kit: true
+  playtime: true
+  moderation: true
+  chat: true
+  visual: true
+  interaction: true
+  automation: true
+  proxy: true
+  protect: true
+  stats: true
+
+commands:
+  register-standalone-aliases: true
+  cooldowns:
+    enabled: true
+    list:
+      heal: 60
+      feed: 60
+      rt: 30
+  warmups:
+    enabled: true
+    cancel-on-move: true
+    show-actionbar: true
+    list:
+      spawn: 3
+      home: 3
+      warp: 3
+      tpa: 3
+      tpahere: 3
+
+teleport:
+  safe-location-down-then-up: false
+  invulnerability-seconds: 3
+  jump-default-distance: 50
+  back:
+    min-distance: 5
+    expiration-seconds: 0
+    blacklisted-worlds: [ ]
+  tpa:
+    expire-seconds: 60
+    block-after-deny-seconds: 120
+    max-distance: 0
+    show-action-buttons: true
+  random:
+    cooldown-seconds: 30
+    max-tries: 20
+    min-radius: 100
+    max-radius: 5000
+    excluded-biomes:
+      - OCEAN
+      - DEEP_OCEAN
+      - COLD_OCEAN
+      - DEEP_COLD_OCEAN
+      - LUKEWARM_OCEAN
+      - DEEP_LUKEWARM_OCEAN
+      - WARM_OCEAN
+      - RIVER
+
+spawn:
+  teleport-on-first-join: true
+  teleport-on-respawn: false
+
+homes:
+  default-name: home
+  default-max: 3
+  confirm-override: true
+  use-gui: true
+
+warps:
+  use-gui: true
+  require-permission-by-default: false
+
+
+economy:
+  currency-symbol: "$"
+  currency-name: "Dollar"
+  currency-name-plural: "Dollars"
+  starting-balance: 100.0
+  min-balance: 0.0
+  max-balance: 1000000000000.0
+  format-pattern: "#,##0.##"
+  min-pay-amount: 0.01
+
+worth:
+  use-defaults: true
+
+kits:
+  newbie-kit: ""
+  drop-overflow: true
+
+playtime:
+  flush-interval-seconds: 30
+  ranks:
+    auto-rankup: false
+
+moderation:
+  default-ban-reason: "Violated server rules"
+  default-mute-reason: "Muted by staff"
+  default-kick-reason: "Kicked from the server"
+  default-warn-reason: "Warning issued by staff"
+  warn-auto-thresholds:
+    3: "mute {player} 30m Reached 3 warnings"
+    5: "tempban {player} 1d Reached 5 warnings"
+  jail-blocked-commands:
+    - tp
+    - tpa
+    - tpahere
+    - home
+    - sethome
+    - warp
+    - spawn
+    - back
+    - dback
+    - rt
+  vanish:
+    night-vision: true
+    silent-chest: true
+
+chat:
+  format: "<gray>[<aqua>{rank}</aqua>]</gray> {prefix}<white>{displayname}</white>{suffix} <dark_gray>»</dark_gray> <gray>{message}</gray>"
+  hover-info:
+    - "<gold>Player:</gold> <white>{player}</white>"
+    - "<gold>Rank:</gold> <aqua>{rank}</aqua>"
+    - "<gold>Balance:</gold> <green>{balance}</green>"
+    - "<yellow>Click to send a private message</yellow>"
+  msg-send-format: "<gray>[<light_purple>Me</light_purple> <dark_gray>→</dark_gray> <white>{target}</white>]</gray> <white>{message}</white>"
+  msg-receive-format: "<gray>[<white>{sender}</white> <dark_gray>→</dark_gray> <light_purple>Me</light_purple>]</gray> <white>{message}</white>"
+  socialspy-format: "<dark_gray>[SPY]</dark_gray> <gray>{sender} → {target}:</gray> <white>{message}</white>"
+  staffchat-format: "<dark_purple>[Staff]</dark_purple> <white>{sender}</white><gray>: {message}</gray>"
+  helpop-format: "<red>[HelpOp]</red> <white>{sender}</white><gray>: {message}</gray>"
+  broadcast-format: "<dark_gray>[<gradient:#f59e0b:#ef4444><bold>NOTICE</bold></gradient>]</dark_gray> <white>{message}</white>"
+  filter:
+    enabled: true
+    spam-cooldown-ms: 1200
+    anti-caps: true
+    caps-min-length: 6
+    caps-threshold-percent: 65
+    block-urls: true
+    whitelisted-domains:
+      - youtube.com
+      - discord.gg
+    blocked-words:
+      - badword1
+      - badword2
+
+tablist:
+  enabled: true
+  update-interval-seconds: 5
+  header:
+    - ""
+    - "<gradient:#7c3aed:#06b6d4><bold>OBSIDIAN SERVER</bold></gradient>"
+    - "<gray>Online: <aqua>{online}</aqua>  Ping: <green>{ping}ms</green></gray>"
+    - ""
+  footer:
+    - ""
+    - "<gray>Balance: <green>{balance}</green>  PlayTime: <yellow>{playtime}</yellow></gray>"
+    - "<dark_gray>obsidian.example.com</dark_gray>"
+  player-format: "<gray>[<aqua>{rank}</aqua>]</gray> <white>{displayname}</white>"
+
+death-messages:
+  enabled: true
+  pvp: "<red>☠ <white>{victim}</white> was slain by <white>{killer}</white> using <aqua>{weapon}</aqua>.</red>"
+  fall: "<yellow>☠ <white>{victim}</white> fell from a high place.</yellow>"
+  lava: "<gold>☠ <white>{victim}</white> tried to swim in lava.</gold>"
+  drown: "<blue>☠ <white>{victim}</white> forgot to breathe underwater.</blue>"
+  generic: "<gray>☠ <white>{victim}</white> died.</gray>"
+
+visual:
+  hologram-refresh-seconds: 5
+  dynamic-sign-interval-seconds: 5
+
+afk:
+  idle-seconds: 300
+  kick-seconds: 0
+
+discord:
+  webhook-url: ""
+  username: "Obsidian"
+
+protect:
+  default-radius: 10
+  max-radius: 100
+  consumer-flush-millis: 1000
+  rollback-items: true
+  rollback-entities: true
+  block-place: true
+  block-break: true
+  natural-break: true
+  explosions: true
+  pistons: true
+  block-burn: true
+  leaf-decay: true
+  tree-growth: true
+  buckets: true
+  liquid-flow: false
+  player-interactions: true
+  item-transactions: true
+  hopper-transactions: true
+  entity-kills: true
+  entity-spawns: true
+  player-messages: true
+  player-commands: true
+  player-sessions: true
+
+stats:
+  cache-ttl-seconds: 15
+  http:
+    enabled: true
+    host: "0.0.0.0"
+    port: 4000
+    worker-threads: 4
+    cors-origin: "*"
+  auth:
+    require-signature: true
+    clock-skew-seconds: 300
+    keys-dir: "keys"
+    api-key: ""

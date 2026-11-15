@@ -1,0 +1,22 @@
+# Obsidian Player Lifecycle Event Hooks
+events:
+  first-join:
+    enabled: true
+    commands:
+      - "msg: <gradient:#7c3aed:#06b6d4>Welcome to the server, {player}!</gradient>"
+  join:
+    enabled: false
+    commands:
+      - "actionbar: <gray>Welcome back, <aqua>{player}</aqua>!</gray>"
+  quit:
+    enabled: false
+    commands: [ ]
+  death:
+    enabled: false
+    commands: [ ]
+  respawn:
+    enabled: false
+    commands: [ ]
+  world-change:
+    enabled: false
+    commands: [ ]

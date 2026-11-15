@@ -1,0 +1,346 @@
+package obsidian.core.database
+
+import com.zaxxer.hikari.HikariConfig
+import com.zaxxer.hikari.HikariDataSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import obsidian.core.config.ObsidianConfig
+import java.io.File
+import java.sql.Connection
+
+enum class DatabaseDialect {
+    SQLITE,
+    MYSQL,
+    MARIADB,
+}
+
+/**
+ * Manages the HikariCP connection pool and schema initialization for SQLite, MySQL, and MariaDB.
+ */
+class DatabaseManager(
+    val dialect: DatabaseDialect,
+    val tablePrefix: String,
+    private val dataSource: HikariDataSource,
+) : AutoCloseable {
+
+    fun table(name: String): String = "$tablePrefix$name"
+
+    suspend fun <T> query(block: (Connection) -> T): T = withContext(Dispatchers.IO) {
+        dataSource.connection.use(block)
+    }
+
+    fun <T> querySync(block: (Connection) -> T): T = dataSource.connection.use(block)
+
+    fun initSchemaSafely() {
+        val longTextType = "TEXT"
+        querySync { conn ->
+            conn.createStatement().use { st ->
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("users")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `username` VARCHAR(32) NOT NULL,
+                        `last_login` BIGINT NOT NULL DEFAULT 0,
+                        `last_logout` BIGINT NOT NULL DEFAULT 0,
+                        `back_location` $longTextType,
+                        `death_location` $longTextType,
+                        `god_mode` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `fly_mode` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `updated_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("homes")}` (
+                        `owner_uuid` VARCHAR(36) NOT NULL,
+                        `name` VARCHAR(64) NOT NULL,
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` DOUBLE NOT NULL,
+                        `y` DOUBLE NOT NULL,
+                        `z` DOUBLE NOT NULL,
+                        `yaw` FLOAT NOT NULL DEFAULT 0,
+                        `pitch` FLOAT NOT NULL DEFAULT 0,
+                        `created_at` BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (`owner_uuid`, `name`)
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("warps")}` (
+                        `name` VARCHAR(64) NOT NULL PRIMARY KEY,
+                        `creator_uuid` VARCHAR(36),
+                        `group_name` VARCHAR(64),
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` DOUBLE NOT NULL,
+                        `y` DOUBLE NOT NULL,
+                        `z` DOUBLE NOT NULL,
+                        `yaw` FLOAT NOT NULL DEFAULT 0,
+                        `pitch` FLOAT NOT NULL DEFAULT 0,
+                        `requires_permission` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `hidden` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `icon_material` VARCHAR(64) NOT NULL DEFAULT 'ENDER_PEARL',
+                        `slot` INT,
+                        `page` INT NOT NULL DEFAULT 1,
+                        `created_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("economy")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `username` VARCHAR(32) NOT NULL,
+                        `balance` DOUBLE NOT NULL DEFAULT 0,
+                        `updated_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("worth")}` (
+                        `material` VARCHAR(64) NOT NULL PRIMARY KEY,
+                        `sell_price` DOUBLE NOT NULL,
+                        `buy_price` DOUBLE,
+                        `updated_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("playtime")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `username` VARCHAR(32) NOT NULL,
+                        `total_millis` BIGINT NOT NULL DEFAULT 0,
+                        `daily_millis` BIGINT NOT NULL DEFAULT 0,
+                        `day_key` VARCHAR(16) NOT NULL DEFAULT '',
+                        `current_rank` VARCHAR(64) NOT NULL DEFAULT 'default',
+                        `claimed_rewards` TEXT NOT NULL DEFAULT '',
+                        `updated_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("kit_claims")}` (
+                        `uuid` VARCHAR(36) NOT NULL,
+                        `kit_name` VARCHAR(64) NOT NULL,
+                        `claim_count` INT NOT NULL DEFAULT 0,
+                        `last_claimed_at` BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (`uuid`, `kit_name`)
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("punishments")}` (
+                        `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `type` VARCHAR(24) NOT NULL,
+                        `target_uuid` VARCHAR(36),
+                        `target_name` VARCHAR(32),
+                        `target_ip` VARCHAR(64),
+                        `actor_uuid` VARCHAR(36),
+                        `actor_name` VARCHAR(32) NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `jail_name` VARCHAR(64),
+                        `created_at` BIGINT NOT NULL DEFAULT 0,
+                        `expires_at` BIGINT,
+                        `active` BOOLEAN NOT NULL DEFAULT TRUE
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("player_ips")}` (
+                        `uuid` VARCHAR(36) NOT NULL,
+                        `ip` VARCHAR(64) NOT NULL,
+                        `username` VARCHAR(32) NOT NULL DEFAULT '',
+                        `last_seen` BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (`uuid`, `ip`)
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("saved_inventories")}` (
+                        `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+                        `owner_uuid` VARCHAR(36) NOT NULL,
+                        `name` VARCHAR(64) NOT NULL,
+                        `payload_base64` TEXT NOT NULL,
+                        `created_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("chat_profiles")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `nickname` VARCHAR(128),
+                        `msg_toggle` BOOLEAN NOT NULL DEFAULT TRUE,
+                        `social_spy` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `updated_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                val autoIncId = when (dialect) {
+                    DatabaseDialect.SQLITE -> "INTEGER PRIMARY KEY AUTOINCREMENT"
+                    DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> "BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY"
+                }
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("protect_blocks")}` (
+                        `id` $autoIncId,
+                        `time` BIGINT NOT NULL,
+                        `actor` VARCHAR(64) NOT NULL,
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` INT NOT NULL,
+                        `y` INT NOT NULL,
+                        `z` INT NOT NULL,
+                        `action` INT NOT NULL,
+                        `old_material` VARCHAR(64) NOT NULL,
+                        `old_blockdata` $longTextType,
+                        `old_extra` $longTextType,
+                        `new_material` VARCHAR(64) NOT NULL,
+                        `new_blockdata` $longTextType,
+                        `new_extra` $longTextType,
+                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("protect_containers")}` (
+                        `id` $autoIncId,
+                        `time` BIGINT NOT NULL,
+                        `actor` VARCHAR(64) NOT NULL,
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` INT NOT NULL,
+                        `y` INT NOT NULL,
+                        `z` INT NOT NULL,
+                        `action` INT NOT NULL,
+                        `material` VARCHAR(64) NOT NULL,
+                        `amount` INT NOT NULL,
+                        `item_base64` $longTextType NOT NULL,
+                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("protect_entities")}` (
+                        `id` $autoIncId,
+                        `time` BIGINT NOT NULL,
+                        `actor` VARCHAR(64) NOT NULL,
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` INT NOT NULL,
+                        `y` INT NOT NULL,
+                        `z` INT NOT NULL,
+                        `action` INT NOT NULL,
+                        `entity_type` VARCHAR(64) NOT NULL,
+                        `entity_snapshot` $longTextType,
+                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("protect_messages")}` (
+                        `id` $autoIncId,
+                        `time` BIGINT NOT NULL,
+                        `actor` VARCHAR(64) NOT NULL,
+                        `world` VARCHAR(128) NOT NULL,
+                        `x` INT NOT NULL,
+                        `y` INT NOT NULL,
+                        `z` INT NOT NULL,
+                        `kind` INT NOT NULL,
+                        `message` $longTextType NOT NULL
+                    );
+                    """.trimIndent()
+                )
+                if (dialect == DatabaseDialect.SQLITE) {
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}users_name` ON `${table("users")}` (`username`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}punishments_target` ON `${table("punishments")}` (`target_uuid`, `type`, `active`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}punishments_ip` ON `${table("punishments")}` (`target_ip`, `type`, `active`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}ips_ip` ON `${table("player_ips")}` (`ip`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_loc` ON `${table("protect_blocks")}` (`world`, `x`, `y`, `z`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_actor` ON `${table("protect_blocks")}` (`actor`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_time` ON `${table("protect_blocks")}` (`time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_containers_loc` ON `${table("protect_containers")}` (`world`, `x`, `y`, `z`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_containers_actor` ON `${table("protect_containers")}` (`actor`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_entities_loc` ON `${table("protect_entities")}` (`world`, `x`, `y`, `z`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_messages_actor` ON `${table("protect_messages")}` (`actor`, `time`);"
+                    )
+                }
+            }
+        }
+    }
+
+    override fun close() {
+        if (!dataSource.isClosed) {
+            dataSource.close()
+        }
+    }
+
+    companion object {
+        fun forSqlite(dbFile: File, tablePrefix: String = "obsidian_"): DatabaseManager {
+            dbFile.parentFile?.mkdirs()
+            val hc = HikariConfig().apply {
+                jdbcUrl = "jdbc:sqlite:${dbFile.absolutePath}"
+                driverClassName = "org.sqlite.JDBC"
+                maximumPoolSize = 1
+                poolName = "Obsidian-SQLite"
+                addDataSourceProperty("journal_mode", "WAL")
+                addDataSourceProperty("synchronous", "NORMAL")
+                addDataSourceProperty("busy_timeout", "5000")
+            }
+            return DatabaseManager(DatabaseDialect.SQLITE, tablePrefix, HikariDataSource(hc)).apply {
+                initSchemaSafely()
+            }
+        }
+
+        fun fromConfig(dataFolder: File, config: ObsidianConfig): DatabaseManager {
+            return when (config.storageMethod) {
+                "mysql", "mariadb" -> {
+                    val dialect =
+                        if (config.storageMethod == "mariadb") DatabaseDialect.MARIADB else DatabaseDialect.MYSQL
+                    val ssl = if (config.mysqlUseSsl) "true" else "false"
+                    val hc = HikariConfig().apply {
+                        jdbcUrl =
+                            "jdbc:mysql://${config.mysqlHost}:${config.mysqlPort}/${config.mysqlDatabase}?useSSL=$ssl&autoReconnect=true&useUnicode=true&characterEncoding=utf8"
+                        username = config.mysqlUsername
+                        password = config.mysqlPassword
+                        maximumPoolSize = config.mysqlPoolSize
+                        poolName = "Obsidian-MySQL"
+                    }
+                    DatabaseManager(dialect, config.mysqlTablePrefix, HikariDataSource(hc)).apply {
+                        initSchemaSafely()
+                    }
+                }
+
+                else -> forSqlite(File(dataFolder, config.sqliteFile), "obsidian_")
+            }
+        }
+    }
+}

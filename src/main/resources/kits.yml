@@ -1,0 +1,34 @@
+# Starter kits (editable in-game with /kiteditor or directly in YAML)
+kits:
+  starter:
+    display-name: "<green>Starter Kit</green>"
+    cooldown-seconds: 86400
+    cost: 0.0
+    max-uses: 0
+    permission-required: false
+    icon: STONE_SWORD
+    slot: 11
+    page: 1
+    hidden: false
+    items-base64: ""
+    fallback-items:
+      - "STONE_SWORD:1"
+      - "STONE_PICKAXE:1"
+      - "STONE_AXE:1"
+      - "BREAD:16"
+    commands: [ ]
+  daily:
+    display-name: "<aqua>Daily Supply</aqua>"
+    cooldown-seconds: 86400
+    cost: 0.0
+    max-uses: 0
+    permission-required: false
+    icon: CHEST
+    slot: 15
+    page: 1
+    hidden: false
+    items-base64: ""
+    fallback-items:
+      - "COOKED_BEEF:8"
+      - "TORCH:16"
+    commands: [ ]

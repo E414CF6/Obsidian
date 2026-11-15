@@ -1,0 +1,20 @@
+# Item sell worth table (Material -> sell price)
+materials:
+  COBBLESTONE: 0.5
+  STONE: 1.0
+  COAL: 4.0
+  IRON_INGOT: 12.0
+  GOLD_INGOT: 25.0
+  REDSTONE: 3.0
+  LAPIS_LAZULI: 5.0
+  DIAMOND: 120.0
+  EMERALD: 150.0
+  NETHERITE_INGOT: 850.0
+  WHEAT: 2.5
+  CARROT: 2.0
+  POTATO: 2.0
+  MELON_SLICE: 1.5
+  SUGAR_CANE: 2.0
+  OAK_LOG: 3.0
+  SPRUCE_LOG: 3.0
+  BIRCH_LOG: 3.0

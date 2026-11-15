@@ -1,0 +1,41 @@
+# PlayTime rank progression & milestone rewards
+ranks:
+  default:
+    display-name: "<gray>Visitor</gray>"
+    next-rank: member
+    required-playtime-seconds: 0
+    cost: 0.0
+    commands: [ ]
+  member:
+    display-name: "<green>Member</green>"
+    next-rank: veteran
+    required-playtime-seconds: 3600
+    cost: 500.0
+    commands:
+      - "give {player} IRON_INGOT 8"
+  veteran:
+    display-name: "<aqua>Veteran</aqua>"
+    next-rank: elite
+    required-playtime-seconds: 36000
+    cost: 5000.0
+    commands:
+      - "give {player} DIAMOND 4"
+  elite:
+    display-name: "<gold>Elite</gold>"
+    next-rank: ""
+    required-playtime-seconds: 180000
+    cost: 25000.0
+    commands:
+      - "give {player} NETHERITE_INGOT 1"
+
+rewards:
+  first_hour:
+    display-name: "<green>1 Hour Explorer</green>"
+    required-playtime-seconds: 3600
+    commands:
+      - "money give {player} 250"
+  ten_hours:
+    display-name: "<aqua>10 Hour Adventurer</aqua>"
+    required-playtime-seconds: 36000
+    commands:
+      - "money give {player} 2000"

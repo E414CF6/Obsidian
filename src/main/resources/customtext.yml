@@ -1,0 +1,20 @@
+# Custom text sections displayed via /ctext <section> [page]
+sections:
+  rules:
+    title: "<gradient:#7c3aed:#06b6d4><bold>Server Rules</bold></gradient>"
+    lines-per-page: 6
+    lines:
+      - "<gray>1.</gray> <white>Be respectful to other players and staff.</white>"
+      - "<gray>2.</gray> <white>No cheating, x-ray, or unauthorized automation.</white>"
+      - "<gray>3.</gray> <white>Do not spam or advertise external servers in chat.</white>"
+      - "<gray>4.</gray> <white>Respect griefing and PvP rules in claimed areas.</white>"
+  help:
+    title: "<aqua><bold>Quick Commands</bold></aqua>"
+    lines-per-page: 6
+    lines:
+      - "<click:run_command:'/spawn'><aqua>/spawn</aqua></click> <gray>- Return to spawn</gray>"
+      - "<click:run_command:'/homes'><aqua>/homes</aqua></click> <gray>- Open your homes GUI</gray>"
+      - "<click:run_command:'/warp'><aqua>/warp</aqua></click> <gray>- Open server warps</gray>"
+      - "<click:run_command:'/kit'><aqua>/kit</aqua></click> <gray>- Open kits menu</gray>"
+      - "<click:run_command:'/bal'><aqua>/bal</aqua></click> <gray>- Check your balance</gray>"
+      - "<click:run_command:'/rankinfo'><aqua>/rankinfo</aqua></click> <gray>- View rank progression</gray>"

@@ -1,0 +1,15 @@
+# Obsidian Scheduled Automation Tasks
+schedules:
+  hourly_tip:
+    enabled: false
+    interval-seconds: 1800
+    min-players: 1
+    run-per-player: false
+    commands:
+      - "broadcast: <aqua>[Tip]</aqua> <gray>Use <white>/help</white> or <white>/ctext rules</white> to view server guides.</gray>"
+  daily_cleanup:
+    enabled: false
+    daily-at: "04:00"
+    min-players: 0
+    commands:
+      - "console: groundclean"
