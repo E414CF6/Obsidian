@@ -44,29 +44,21 @@ class WarpModule(
             .executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 showWarpList(player)
-            }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .suggests { ctx, builder ->
-                        warpService.getAccessibleWarps(ctx.source.sender)
-                            .map { it.name }
-                            .filter { it.startsWith(builder.remaining, ignoreCase = true) }
-                            .forEach { builder.suggest(it) }
-                        builder.buildFuture()
+            }.then(Commands.argument("name", StringArgumentType.word()).suggests { ctx, builder ->
+                    warpService.getAccessibleWarps(ctx.source.sender).map { it.name }
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
+                    builder.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val name = StringArgumentType.getString(ctx, "name")
+                    val warp = warpService.getWarp(name)
+                    if (warp == null) {
+                        context.locale.send(player, "warp.not-found", "warp" to name)
+                        return@executes 0
                     }
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val name = StringArgumentType.getString(ctx, "name")
-                        val warp = warpService.getWarp(name)
-                        if (warp == null) {
-                            context.locale.send(player, "warp.not-found", "warp" to name)
-                            return@executes 0
-                        }
-                        warpService.teleportToWarp(player, warp)
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    warpService.teleportToWarp(player, warp)
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, node, "Teleport to a server warp", emptyList())
     }
 
@@ -76,64 +68,48 @@ class WarpModule(
             .executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 showWarpList(player)
-            }
-            .build()
+            }.build()
         registrar.register(context.plugin.pluginMeta, node, "Browse available server warps", emptyList())
     }
 
     private fun registerSetWarp(registrar: Commands) {
         val node = Commands.literal("setwarp")
             .requires { it.sender.hasPermission("obsidian.command.setwarp") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val name = StringArgumentType.getString(ctx, "name")
-                        warpService.setWarp(player, name)
-                        context.locale.send(player, "warp.set", "warp" to name)
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("group", StringArgumentType.word())
-                            .executes { ctx ->
-                                val player =
-                                    CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                                val name = StringArgumentType.getString(ctx, "name")
-                                val group = StringArgumentType.getString(ctx, "group")
-                                warpService.setWarp(player, name, group = group)
-                                context.locale.send(player, "warp.set", "warp" to name)
-                                Command.SINGLE_SUCCESS
-                            }
-                    )
-            )
-            .build()
+            .then(Commands.argument("name", StringArgumentType.word()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val name = StringArgumentType.getString(ctx, "name")
+                    warpService.setWarp(player, name)
+                    context.locale.send(player, "warp.set", "warp" to name)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("group", StringArgumentType.word()).executes { ctx ->
+                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                            val name = StringArgumentType.getString(ctx, "name")
+                            val group = StringArgumentType.getString(ctx, "group")
+                            warpService.setWarp(player, name, group = group)
+                            context.locale.send(player, "warp.set", "warp" to name)
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, node, "Create or update a server warp", emptyList())
     }
 
     private fun registerRemoveWarp(registrar: Commands) {
         val node = Commands.literal("removewarp")
             .requires { it.sender.hasPermission("obsidian.command.removewarp") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .suggests { ctx, builder ->
-                        warpService.getAccessibleWarps(ctx.source.sender)
-                            .map { it.name }
-                            .filter { it.startsWith(builder.remaining, ignoreCase = true) }
-                            .forEach { builder.suggest(it) }
-                        builder.buildFuture()
+            .then(Commands.argument("name", StringArgumentType.word()).suggests { ctx, builder ->
+                    warpService.getAccessibleWarps(ctx.source.sender).map { it.name }
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
+                    builder.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val name = StringArgumentType.getString(ctx, "name")
+                    if (warpService.deleteWarp(name)) {
+                        context.locale.send(sender, "warp.removed", "warp" to name)
+                    } else {
+                        context.locale.send(sender, "warp.not-found", "warp" to name)
                     }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val name = StringArgumentType.getString(ctx, "name")
-                        if (warpService.deleteWarp(name)) {
-                            context.locale.send(sender, "warp.removed", "warp" to name)
-                        } else {
-                            context.locale.send(sender, "warp.not-found", "warp" to name)
-                        }
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(
             context.plugin.pluginMeta,

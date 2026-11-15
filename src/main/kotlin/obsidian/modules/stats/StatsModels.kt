@@ -50,8 +50,7 @@ data class PlayerSummary(
     val totalPlayTimeMs: Long,
     val lastLoginTime: Long,
     val lastLogoffTime: Long,
-    @SerializedName("isOnline")
-    val isOnline: Boolean,
+    @SerializedName("isOnline") val isOnline: Boolean,
     val votes: Long,
     val powerLevel: Long,
     val skills: Map<String, PlayerSkillStat>,

@@ -29,9 +29,8 @@ class RandomTeleportService(
         maxTries = raw.getInt("teleport.random.max-tries", 20).coerceIn(1, 100)
         minRadius = raw.getInt("teleport.random.min-radius", 100).coerceAtLeast(0)
         maxRadius = raw.getInt("teleport.random.max-radius", 5000).coerceAtLeast(minRadius + 1)
-        excludedBiomes = raw.getStringList("teleport.random.excluded-biomes")
-            .map { it.uppercase().replace(" ", "_") }
-            .toSet()
+        excludedBiomes =
+            raw.getStringList("teleport.random.excluded-biomes").map { it.uppercase().replace(" ", "_") }.toSet()
     }
 
     fun randomTeleport(player: Player, world: World = player.world): CompletableFuture<Location?> {
@@ -63,8 +62,11 @@ class RandomTeleportService(
                 } else {
                     snapshot.getHighestBlockYAt(lx, lz)
                 }
-                val biomeName = snapshot.getBiome(lx, highestY.coerceIn(world.minHeight, world.maxHeight - 1), lz)
-                    .key.key.uppercase()
+                val biomeName = snapshot.getBiome(
+                    lx,
+                    highestY.coerceIn(world.minHeight, world.maxHeight - 1),
+                    lz
+                ).key.key.uppercase()
                 if (biomeName in excludedBiomes) {
                     return@thenCompose tryAttempt(attempt + 1)
                 }

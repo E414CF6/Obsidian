@@ -54,57 +54,48 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerTp(registrar: Commands) {
         val node = Commands.literal("tp")
             .requires { it.sender.hasPermission("obsidian.command.tp") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
-                        val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        teleportService.teleport(sender, target.location, TeleportCause.COMMAND).thenAccept { ok ->
-                            if (ok) {
-                                context.locale.send(
-                                    sender,
-                                    "teleport.teleported-to-player",
-                                    "source" to sender.name,
-                                    "target" to target.name,
-                                )
-                            } else {
-                                context.locale.send(sender, "teleport.unsafe-location")
-                            }
+            .then(Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
+                    val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val target =
+                        ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                            .firstOrNull() ?: return@executes 0
+                    teleportService.teleport(sender, target.location, TeleportCause.COMMAND).thenAccept { ok ->
+                        if (ok) {
+                            context.locale.send(
+                                sender,
+                                "teleport.teleported-to-player",
+                                "source" to sender.name,
+                                "target" to target.name,
+                            )
+                        } else {
+                            context.locale.send(sender, "teleport.unsafe-location")
                         }
-                        Command.SINGLE_SUCCESS
                     }
-                    .then(
-                        Commands.argument("destination", ArgumentTypes.player())
-                            .requires {
-                                it.sender.hasPermission("obsidian.command.tp.others") || it.sender.hasPermission(
-                                    "obsidian.admin"
-                                )
+                    Command.SINGLE_SUCCESS
+                }.then(Commands.argument("destination", ArgumentTypes.player()).requires {
+                        it.sender.hasPermission("obsidian.command.tp.others") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }.executes { ctx ->
+                        val sender = ctx.source.sender
+                        val source = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val dest = ctx.getArgument("destination", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        teleportService.teleport(source, dest.location, TeleportCause.COMMAND).thenAccept { ok ->
+                                if (ok) {
+                                    context.locale.send(
+                                        sender,
+                                        "teleport.teleported-to-player",
+                                        "source" to source.name,
+                                        "target" to dest.name,
+                                    )
+                                } else {
+                                    context.locale.send(sender, "teleport.unsafe-location")
+                                }
                             }
-                            .executes { ctx ->
-                                val sender = ctx.source.sender
-                                val source = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                val dest = ctx.getArgument("destination", PlayerSelectorArgumentResolver::class.java)
-                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                teleportService.teleport(source, dest.location, TeleportCause.COMMAND)
-                                    .thenAccept { ok ->
-                                        if (ok) {
-                                            context.locale.send(
-                                                sender,
-                                                "teleport.teleported-to-player",
-                                                "source" to source.name,
-                                                "target" to dest.name,
-                                            )
-                                        } else {
-                                            context.locale.send(sender, "teleport.unsafe-location")
-                                        }
-                                    }
-                                Command.SINGLE_SUCCESS
-                            }
-                    )
-            )
-            .build()
+                        Command.SINGLE_SUCCESS
+                    })).build()
         registrar.register(context.plugin.pluginMeta, node, "Teleport to a player", emptyList())
     }
 
@@ -112,11 +103,11 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
         val node = Commands.literal("tphere")
             .requires { it.sender.hasPermission("obsidian.command.tphere") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
+                Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                         val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
                         teleportService.teleport(target, sender.location, TeleportCause.COMMAND).thenAccept { ok ->
                             if (ok) {
                                 context.locale.send(
@@ -128,9 +119,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                             }
                         }
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, node, "Teleport a player to you", emptyList())
     }
 
@@ -138,29 +127,19 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
         val node = Commands.literal("tppos")
             .requires { it.sender.hasPermission("obsidian.command.tppos") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("x", DoubleArgumentType.doubleArg())
-                    .then(
+                Commands.argument("x", DoubleArgumentType.doubleArg()).then(
                         Commands.argument("y", DoubleArgumentType.doubleArg())
-                            .then(
-                                Commands.argument("z", DoubleArgumentType.doubleArg())
-                                    .executes { ctx ->
-                                        val player =
-                                            CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                                        executeTpPos(player, player.world, ctx)
-                                    }
-                                    .then(
-                                        Commands.argument("world", ArgumentTypes.world())
-                                            .executes { ctx ->
-                                                val player = CommandHelper.requirePlayer(context, ctx.source.sender)
-                                                    ?: return@executes 0
-                                                val world = ctx.getArgument("world", World::class.java)
-                                                executeTpPos(player, world, ctx)
-                                            }
-                                    )
-                            )
-                    )
-            )
-            .build()
+                            .then(Commands.argument("z", DoubleArgumentType.doubleArg()).executes { ctx ->
+                                    val player =
+                                        CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                                    executeTpPos(player, player.world, ctx)
+                                }.then(
+                                    Commands.argument("world", ArgumentTypes.world()).executes { ctx ->
+                                            val player = CommandHelper.requirePlayer(context, ctx.source.sender)
+                                                ?: return@executes 0
+                                            val world = ctx.getArgument("world", World::class.java)
+                                            executeTpPos(player, world, ctx)
+                                        })))).build()
         registrar.register(context.plugin.pluginMeta, node, "Teleport to coordinates", emptyList())
     }
 
@@ -195,46 +174,36 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
         val tpaNode = Commands.literal("tpa")
             .requires { it.sender.hasPermission("obsidian.command.tpa") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
+                Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                         val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
                         tpaService.sendRequest(sender, target, TpaType.TO_TARGET)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, tpaNode, "Request to teleport to a player", emptyList())
 
         val tpaHereNode = Commands.literal("tpahere")
             .requires { it.sender.hasPermission("obsidian.command.tpahere") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
+                Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                         val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
                         tpaService.sendRequest(sender, target, TpaType.HERE)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, tpaHereNode, "Request a player to teleport to you", emptyList())
 
         registerTpaResponseCommand(
-            registrar,
-            "tpaccept",
-            "Accept a teleport request",
-            "obsidian.command.tpaccept"
+            registrar, "tpaccept", "Accept a teleport request", "obsidian.command.tpaccept"
         ) { player, senderName ->
             tpaService.accept(player, senderName)
         }
         registerTpaResponseCommand(
-            registrar,
-            "tpdeny",
-            "Deny a teleport request",
-            "obsidian.command.tpdeny"
+            registrar, "tpdeny", "Deny a teleport request", "obsidian.command.tpdeny"
         ) { player, senderName ->
             tpaService.deny(player, senderName)
         }
@@ -253,23 +222,17 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 handler(player, null)
                 Command.SINGLE_SUCCESS
-            }
-            .then(
-                Commands.argument("sender", StringArgumentType.word())
-                    .suggests { ctx, builder ->
-                        val player = ctx.source.sender as? Player
-                        if (player != null) {
-                            tpaService.suggestIncomingSenders(player, builder.remaining).forEach { builder.suggest(it) }
-                        }
-                        builder.buildFuture()
+            }.then(Commands.argument("sender", StringArgumentType.word()).suggests { ctx, builder ->
+                    val player = ctx.source.sender as? Player
+                    if (player != null) {
+                        tpaService.suggestIncomingSenders(player, builder.remaining).forEach { builder.suggest(it) }
                     }
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        handler(player, StringArgumentType.getString(ctx, "sender"))
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    builder.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    handler(player, StringArgumentType.getString(ctx, "sender"))
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, node, description, emptyList())
     }
 
@@ -289,8 +252,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
         registrar.register(context.plugin.pluginMeta, backNode, "Teleport to your previous location", emptyList())
 
         val dbackNode = Commands.literal("dback")
@@ -308,8 +270,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
         registrar.register(context.plugin.pluginMeta, dbackNode, "Teleport to your last death location", emptyList())
     }
 
@@ -329,13 +290,9 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
         registrar.register(
-            context.plugin.pluginMeta,
-            topNode,
-            "Teleport to the highest block at your position",
-            emptyList()
+            context.plugin.pluginMeta, topNode, "Teleport to the highest block at your position", emptyList()
         )
 
         val jumpNode = Commands.literal("jump")
@@ -356,8 +313,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     if (!ok) context.locale.send(player, "teleport.unsafe-location")
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
         registrar.register(context.plugin.pluginMeta, jumpNode, "Jump to the block you are looking at", emptyList())
     }
 
@@ -377,14 +333,14 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                         }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .then(
+            }.then(
                 Commands.argument("target", ArgumentTypes.player())
                     .requires { it.sender.hasPermission("obsidian.command.spawn.others") || it.sender.hasPermission("obsidian.admin") }
                     .executes { ctx ->
                         val sender = ctx.source.sender
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
                         val spawn = spawnService.getSpawnFor(target) ?: run {
                             context.locale.send(sender, "teleport.spawn-not-set")
                             return@executes 0
@@ -402,9 +358,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                                 }
                             }
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, spawnNode, "Teleport to spawn", emptyList())
 
         val setSpawnNode = Commands.literal("setspawn")
@@ -414,18 +368,14 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 spawnService.setSpawn(null, player.location)
                 context.locale.send(player, "teleport.spawn-set", "group" to "default")
                 Command.SINGLE_SUCCESS
-            }
-            .then(
-                Commands.argument("group", StringArgumentType.word())
-                    .executes { ctx ->
+            }.then(
+                Commands.argument("group", StringArgumentType.word()).executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val group = StringArgumentType.getString(ctx, "group")
                         spawnService.setSpawn(group, player.location)
                         context.locale.send(player, "teleport.spawn-set", "group" to group)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, setSpawnNode, "Set server or group spawn point", emptyList())
     }
 
@@ -435,17 +385,14 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 executeRt(player, player.world)
-            }
-            .then(
+            }.then(
                 Commands.argument("world", ArgumentTypes.world())
                     .requires { it.sender.hasPermission("obsidian.command.rt.world") || it.sender.hasPermission("obsidian.admin") }
                     .executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val world = ctx.getArgument("world", World::class.java)
                         executeRt(player, world)
-                    }
-            )
-            .build()
+                    }).build()
 
         registrar.register(
             context.plugin.pluginMeta,

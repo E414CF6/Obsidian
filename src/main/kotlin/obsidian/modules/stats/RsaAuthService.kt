@@ -126,9 +126,8 @@ class RsaAuthService(
             return "-----BEGIN $label-----\n$b64\n-----END $label-----\n"
         }
 
-        private fun stripPemHeaders(pem: String): String = pem
-            .replace(Regex("-----BEGIN [A-Z0-9 ]+-----"), "")
-            .replace(Regex("-----END [A-Z0-9 ]+-----"), "")
-            .replace(Regex("\\s+"), "")
+        private fun stripPemHeaders(pem: String): String =
+            pem.replace(Regex("-----BEGIN [A-Z0-9 ]+-----"), "").replace(Regex("-----END [A-Z0-9 ]+-----"), "")
+                .replace(Regex("\\s+"), "")
     }
 }

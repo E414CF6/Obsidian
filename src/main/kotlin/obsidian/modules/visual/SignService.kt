@@ -75,9 +75,7 @@ class SignService(private val context: ObsidianContext) {
     }
 
     fun registerDynamicSign(
-        sign: Sign,
-        frontTemplates: List<String>,
-        backTemplates: List<String>
+        sign: Sign, frontTemplates: List<String>, backTemplates: List<String>
     ): DynamicSignDefinition {
         val loc = StoredLocation.fromBukkit(sign.location)!!
         val key = blockKey(loc)

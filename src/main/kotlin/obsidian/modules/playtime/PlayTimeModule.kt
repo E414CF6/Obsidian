@@ -72,15 +72,12 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                         CommandHelper.suggestOnlinePlayers(ctx.source.sender, builder.remaining)
                             .forEach(builder::suggest)
                         builder.buildFuture()
-                    }
-                    .executes { ctx ->
+                    }.executes { ctx ->
                         val sender = ctx.source.sender
                         val targetName = StringArgumentType.getString(ctx, "target")
                         showOtherPlaytime(sender, targetName)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -132,15 +129,11 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 sendPlayTimeTop(ctx.source.sender, 1)
                 Command.SINGLE_SUCCESS
-            }
-            .then(
-                Commands.argument("page", IntegerArgumentType.integer(1))
-                    .executes { ctx ->
+            }.then(
+                Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
                         sendPlayTimeTop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -170,10 +163,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                 val to = minOf(from + perPage, top.size)
 
                 context.locale.send(
-                    sender,
-                    "playtime.top-header",
-                    "page" to page.toString(),
-                    "pages" to totalPages.toString()
+                    sender, "playtime.top-header", "page" to page.toString(), "pages" to totalPages.toString()
                 )
                 for (i in from until to) {
                     val rec = top[i]
@@ -217,8 +207,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
 
         registrar.register(context.plugin.pluginMeta, node, "Promote to next rank", emptyList())
     }
@@ -249,8 +238,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                     "req_cost" to (eco?.formatMoney(next.cost) ?: next.cost.toString()),
                 )
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
 
         registrar.register(context.plugin.pluginMeta, node, "View current and next rank requirements", emptyList())
     }
@@ -269,8 +257,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
 
         registrar.register(
             context.plugin.pluginMeta,

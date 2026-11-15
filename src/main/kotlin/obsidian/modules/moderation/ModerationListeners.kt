@@ -107,8 +107,9 @@ class ModerationListeners(
         }
         val jail = service.getActiveJail(player.uniqueId) ?: return
         val jailLoc = jail.jailName?.let(service::getJailLocation) ?: return
-        if (event.to.world?.name != jailLoc.world ||
-            event.to.distanceSquared(jailLoc.toBukkitLocation() ?: return) > 64.0
+        if (event.to.world?.name != jailLoc.world || event.to.distanceSquared(
+                jailLoc.toBukkitLocation() ?: return
+            ) > 64.0
         ) {
             jailLoc.toBukkitLocation()?.let { event.to = it }
         }
@@ -128,9 +129,7 @@ class ModerationListeners(
             if (state is Container) {
                 event.isCancelled = true
                 val copy = Bukkit.createInventory(
-                    null,
-                    state.inventory.size,
-                    TextFormatter.format("<gray>Silent Inspect</gray>")
+                    null, state.inventory.size, TextFormatter.format("<gray>Silent Inspect</gray>")
                 )
                 copy.contents = state.inventory.contents
                 player.openInventory(copy)

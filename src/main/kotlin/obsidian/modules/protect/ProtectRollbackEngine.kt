@@ -205,27 +205,18 @@ class ProtectRollbackEngine(
             service.queue.flushSync()
             val targetRolledBack = restoreMode
             val blocks = repository.queryBlocks(
-                query,
-                rolledBackFilter = targetRolledBack,
-                ascending = restoreMode,
-                limit = 10_000
+                query, rolledBackFilter = targetRolledBack, ascending = restoreMode, limit = 10_000
             )
             val containers = if (service.config.rollbackItems) {
                 repository.queryContainers(
-                    query,
-                    rolledBackFilter = targetRolledBack,
-                    ascending = restoreMode,
-                    limit = 10_000
+                    query, rolledBackFilter = targetRolledBack, ascending = restoreMode, limit = 10_000
                 )
             } else {
                 emptyList()
             }
             val entities = if (service.config.rollbackEntities) {
                 repository.queryEntities(
-                    query,
-                    rolledBackFilter = targetRolledBack,
-                    ascending = restoreMode,
-                    limit = 2_000
+                    query, rolledBackFilter = targetRolledBack, ascending = restoreMode, limit = 2_000
                 )
             } else {
                 emptyList()
@@ -428,8 +419,7 @@ class ProtectRollbackEngine(
         val actions = query.actions
 
         val includeBlocks = actions.isEmpty() || actions.any {
-            it == ProtectFilterAction.BLOCK_BREAK || it == ProtectFilterAction.BLOCK_PLACE ||
-                    it == ProtectFilterAction.INTERACT || it == ProtectFilterAction.SIGN
+            it == ProtectFilterAction.BLOCK_BREAK || it == ProtectFilterAction.BLOCK_PLACE || it == ProtectFilterAction.INTERACT || it == ProtectFilterAction.SIGN
         }
         val includeContainers = actions.isEmpty() || actions.any {
             it == ProtectFilterAction.CONTAINER_ADD || it == ProtectFilterAction.CONTAINER_REMOVE
@@ -449,22 +439,10 @@ class ProtectRollbackEngine(
                     else -> "clicked"
                 }
                 val subject = if (b.action == ProtectActions.BLOCK_BREAK) b.oldMaterial else b.newMaterial
-                val detail = service.decodeSignLines(b.newExtra ?: b.oldExtra)
-                    ?.first
-                    ?.filter { it.isNotBlank() }
-                    ?.joinToString(" / ")
-                    .orEmpty()
+                val detail = service.decodeSignLines(b.newExtra ?: b.oldExtra)?.first?.filter { it.isNotBlank() }
+                    ?.joinToString(" / ").orEmpty()
                 lines += ProtectLookupLine(
-                    b.time,
-                    b.actor,
-                    verb,
-                    subject.lowercase(),
-                    b.world,
-                    b.x,
-                    b.y,
-                    b.z,
-                    detail,
-                    b.rolledBack
+                    b.time, b.actor, verb, subject.lowercase(), b.world, b.x, b.y, b.z, detail, b.rolledBack
                 )
             }
         }
@@ -489,16 +467,7 @@ class ProtectRollbackEngine(
             for (e in repository.queryEntities(query, limit = 500)) {
                 val verb = if (e.action == ProtectActions.ENTITY_KILL) "killed" else "spawned"
                 lines += ProtectLookupLine(
-                    e.time,
-                    e.actor,
-                    verb,
-                    e.entityType.lowercase(),
-                    e.world,
-                    e.x,
-                    e.y,
-                    e.z,
-                    "",
-                    e.rolledBack
+                    e.time, e.actor, verb, e.entityType.lowercase(), e.world, e.x, e.y, e.z, "", e.rolledBack
                 )
             }
         }

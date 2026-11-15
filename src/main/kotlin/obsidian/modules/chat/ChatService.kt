@@ -77,13 +77,11 @@ class ChatService(
         broadcastFormat = raw.getString("chat.broadcast-format", broadcastFormat) ?: broadcastFormat
     }
 
-    fun getProfile(uuid: UUID): ChatProfileRecord =
-        profiles.computeIfAbsent(uuid) { ChatProfileRecord(uuid = uuid) }
+    fun getProfile(uuid: UUID): ChatProfileRecord = profiles.computeIfAbsent(uuid) { ChatProfileRecord(uuid = uuid) }
 
     fun getNickname(uuid: UUID): String? = profiles[uuid]?.nickname?.takeIf { it.isNotBlank() }
 
-    fun getEffectiveDisplayNameRaw(player: Player): String =
-        getNickname(player.uniqueId) ?: player.name
+    fun getEffectiveDisplayNameRaw(player: Player): String = getNickname(player.uniqueId) ?: player.name
 
     fun setNickname(player: Player, nickname: String?) {
         val cleaned = nickname?.takeIf { it.isNotBlank() }
@@ -179,8 +177,7 @@ class ChatService(
             val nick = getNickname(online.uniqueId) ?: continue
             val plainNick = PlainTextComponentSerializer.plainText().serialize(TextFormatter.format(nick))
             if (plainNick.equals(strippedQuery, ignoreCase = true) || plainNick.contains(
-                    strippedQuery,
-                    ignoreCase = true
+                    strippedQuery, ignoreCase = true
                 )
             ) {
                 return online
@@ -243,18 +240,15 @@ class ChatService(
         val prefixPart = templateWithPlaceholders.substringBefore("{message}", "")
         val suffixPart = templateWithPlaceholders.substringAfter("{message}", "")
 
-        var renderedPrefix = TextFormatter.format(prefixPart)
-            .clickEvent(ClickEvent.suggestCommand("/msg ${player.name} "))
+        var renderedPrefix =
+            TextFormatter.format(prefixPart).clickEvent(ClickEvent.suggestCommand("/msg ${player.name} "))
         if (hoverComp != null) {
             renderedPrefix = renderedPrefix.hoverEvent(HoverEvent.showText(hoverComp))
         }
         val renderedSuffix = if (suffixPart.isEmpty()) Component.empty() else TextFormatter.format(suffixPart)
 
         event.renderer(ChatRenderer.viewerUnaware { _, _, _ ->
-            Component.empty()
-                .append(renderedPrefix)
-                .append(messageComp)
-                .append(renderedSuffix)
+            Component.empty().append(renderedPrefix).append(messageComp).append(renderedSuffix)
         })
     }
 
@@ -262,8 +256,8 @@ class ChatService(
     fun onJoin(event: PlayerJoinEvent) {
         val player = event.player
         context.scheduler.asyncScope.launch {
-            val loaded = context.chatProfileRepository.findByUuid(player.uniqueId)
-                ?: ChatProfileRecord(uuid = player.uniqueId)
+            val loaded =
+                context.chatProfileRepository.findByUuid(player.uniqueId) ?: ChatProfileRecord(uuid = player.uniqueId)
             profiles[player.uniqueId] = loaded
             context.scheduler.runForEntity(player) {
                 applyDisplayName(player, loaded.nickname)

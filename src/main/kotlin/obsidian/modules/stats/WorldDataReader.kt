@@ -29,13 +29,8 @@ object WorldDataReader {
 
     fun stripMinecraftCodes(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return raw
-            .replace(BRACED_HEX_PATTERN, "")
-            .replace(AMPERSAND_HEX_PATTERN, "")
-            .replace(LEGACY_CODE_PATTERN, "")
-            .replace(MINIMESSAGE_TAG_PATTERN, "")
-            .replace(EXTRA_SPACES_PATTERN, " ")
-            .trim()
+        return raw.replace(BRACED_HEX_PATTERN, "").replace(AMPERSAND_HEX_PATTERN, "").replace(LEGACY_CODE_PATTERN, "")
+            .replace(MINIMESSAGE_TAG_PATTERN, "").replace(EXTRA_SPACES_PATTERN, " ").trim()
     }
 
     fun stripNamespace(key: String?): String {
@@ -55,11 +50,11 @@ object WorldDataReader {
             val sprintCm = getLong(custom, "minecraft:sprint_one_cm")
             val swimCm = getLong(custom, "minecraft:swim_one_cm")
             val flyCm = getLong(custom, "minecraft:fly_one_cm")
-            val vehicleCm = getLong(custom, "minecraft:boat_one_cm") +
-                    getLong(custom, "minecraft:horse_one_cm") +
-                    getLong(custom, "minecraft:minecart_one_cm") +
-                    getLong(custom, "minecraft:pig_one_cm") +
-                    getLong(custom, "minecraft:strider_one_cm")
+            val vehicleCm =
+                getLong(custom, "minecraft:boat_one_cm") + getLong(custom, "minecraft:horse_one_cm") + getLong(
+                    custom,
+                    "minecraft:minecart_one_cm"
+                ) + getLong(custom, "minecraft:pig_one_cm") + getLong(custom, "minecraft:strider_one_cm")
 
             val mined = sumAndTop(stats.getAsJsonObject("minecraft:mined"), 10)
             val used = sumAndTop(stats.getAsJsonObject("minecraft:used"), 8)

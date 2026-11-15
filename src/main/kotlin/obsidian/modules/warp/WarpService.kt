@@ -48,29 +48,24 @@ class WarpService(
     fun getWarp(name: String): WarpRecord? = warps[name.lowercase()]
 
     fun getAccessibleWarps(sender: CommandSender): List<WarpRecord> =
-        warps.values
-            .filter { (!it.hidden || sender.hasPermission("obsidian.admin")) && canAccess(sender, it) }
+        warps.values.filter { (!it.hidden || sender.hasPermission("obsidian.admin")) && canAccess(sender, it) }
             .sortedWith(compareBy<WarpRecord> { it.page }.thenBy { it.name.lowercase() })
 
     fun canAccess(sender: CommandSender, warp: WarpRecord): Boolean {
         if (!warp.requiresPermission) return true
-        return sender.hasPermission("obsidian.admin") ||
-                sender.hasPermission("obsidian.warp.*") ||
-                sender.hasPermission("obsidian.warp.${warp.name.lowercase()}")
+        return sender.hasPermission("obsidian.admin") || sender.hasPermission("obsidian.warp.*") || sender.hasPermission(
+            "obsidian.warp.${warp.name.lowercase()}"
+        )
     }
 
     fun setWarp(
-        creator: Player,
-        name: String,
-        group: String? = null,
-        requiresPermission: Boolean? = null
+        creator: Player, name: String, group: String? = null, requiresPermission: Boolean? = null
     ): WarpRecord? {
         val stored = StoredLocation.fromBukkit(creator.location) ?: return null
         val key = name.lowercase()
         val existing = warps[key]
-        val icon = creator.inventory.itemInMainHand.takeIf { !it.type.isAir }?.type?.name
-            ?: existing?.iconMaterial
-            ?: "ENDER_PEARL"
+        val icon = creator.inventory.itemInMainHand.takeIf { !it.type.isAir }?.type?.name ?: existing?.iconMaterial
+        ?: "ENDER_PEARL"
 
         val record = WarpRecord(
             name = name,

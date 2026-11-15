@@ -38,20 +38,16 @@ class VaultEconomyHook(
     override fun hasAccount(playerName: String, worldName: String): Boolean = true
     override fun hasAccount(player: OfflinePlayer, worldName: String): Boolean = true
 
-    override fun getBalance(playerName: String): Double =
-        getBalance(Bukkit.getOfflinePlayer(playerName))
+    override fun getBalance(playerName: String): Double = getBalance(Bukkit.getOfflinePlayer(playerName))
 
-    override fun getBalance(player: OfflinePlayer): Double =
-        economyService.getBalance(player.uniqueId)
+    override fun getBalance(player: OfflinePlayer): Double = economyService.getBalance(player.uniqueId)
 
     override fun getBalance(playerName: String, world: String): Double = getBalance(playerName)
     override fun getBalance(player: OfflinePlayer, world: String): Double = getBalance(player)
 
-    override fun has(playerName: String, amount: Double): Boolean =
-        has(Bukkit.getOfflinePlayer(playerName), amount)
+    override fun has(playerName: String, amount: Double): Boolean = has(Bukkit.getOfflinePlayer(playerName), amount)
 
-    override fun has(player: OfflinePlayer, amount: Double): Boolean =
-        economyService.has(player.uniqueId, amount)
+    override fun has(player: OfflinePlayer, amount: Double): Boolean = economyService.has(player.uniqueId, amount)
 
     override fun has(playerName: String, worldName: String, amount: Double): Boolean = has(playerName, amount)
     override fun has(player: OfflinePlayer, worldName: String, amount: Double): Boolean = has(player, amount)
@@ -61,10 +57,7 @@ class VaultEconomyHook(
 
     override fun withdrawPlayer(player: OfflinePlayer, amount: Double): EconomyResponse {
         if (amount < 0) return EconomyResponse(
-            0.0,
-            getBalance(player),
-            EconomyResponse.ResponseType.FAILURE,
-            "Cannot withdraw negative amount"
+            0.0, getBalance(player), EconomyResponse.ResponseType.FAILURE, "Cannot withdraw negative amount"
         )
         val ok = economyService.withdraw(player.uniqueId, amount, player.name)
         val bal = economyService.getBalance(player.uniqueId)
@@ -86,10 +79,7 @@ class VaultEconomyHook(
 
     override fun depositPlayer(player: OfflinePlayer, amount: Double): EconomyResponse {
         if (amount < 0) return EconomyResponse(
-            0.0,
-            getBalance(player),
-            EconomyResponse.ResponseType.FAILURE,
-            "Cannot deposit negative amount"
+            0.0, getBalance(player), EconomyResponse.ResponseType.FAILURE, "Cannot deposit negative amount"
         )
         val ok = economyService.deposit(player.uniqueId, amount, player.name)
         val bal = economyService.getBalance(player.uniqueId)

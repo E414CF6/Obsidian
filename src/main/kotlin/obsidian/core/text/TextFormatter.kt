@@ -12,10 +12,8 @@ import java.util.regex.Pattern
 object TextFormatter {
 
     private val miniMessage: MiniMessage = MiniMessage.miniMessage()
-    private val legacyAmpersand: LegacyComponentSerializer = LegacyComponentSerializer.builder()
-        .character('&')
-        .hexColors()
-        .build()
+    private val legacyAmpersand: LegacyComponentSerializer =
+        LegacyComponentSerializer.builder().character('&').hexColors().build()
 
     private val legacyHexPattern = Pattern.compile("&#([0-9a-fA-F]{6})")
     private val legacyCodeMap = mapOf(

@@ -183,11 +183,7 @@ class ProtectService(
     }
 
     fun logBlockTransition(
-        actor: String,
-        block: Block,
-        oldState: BlockState,
-        newMaterial: Material,
-        newBlockData: BlockData?
+        actor: String, block: Block, oldState: BlockState, newMaterial: Material, newBlockData: BlockData?
     ) {
         val world = block.world.name
         val oldMat = oldState.type

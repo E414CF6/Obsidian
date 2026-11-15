@@ -104,10 +104,7 @@ class ScheduleService(private val context: ObsidianContext) {
 
             val dailyTarget = job.dailyAt
             if (dailyTarget != null) {
-                if (job.lastDailyDate != today &&
-                    nowTime.hour == dailyTarget.hour &&
-                    nowTime.minute == dailyTarget.minute
-                ) {
+                if (job.lastDailyDate != today && nowTime.hour == dailyTarget.hour && nowTime.minute == dailyTarget.minute) {
                     job.lastDailyDate = today
                     job.lastRunAtMillis = nowMs
                     runNow(job)
@@ -122,7 +119,6 @@ class ScheduleService(private val context: ObsidianContext) {
     companion object {
         private val TIME_FMT = DateTimeFormatter.ofPattern("H:mm")
 
-        fun parseTime(raw: String): LocalTime? =
-            runCatching { LocalTime.parse(raw.trim(), TIME_FMT) }.getOrNull()
+        fun parseTime(raw: String): LocalTime? = runCatching { LocalTime.parse(raw.trim(), TIME_FMT) }.getOrNull()
     }
 }

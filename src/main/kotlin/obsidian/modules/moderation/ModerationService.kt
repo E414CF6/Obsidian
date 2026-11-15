@@ -223,9 +223,7 @@ class ModerationService(private val context: ObsidianContext) {
         if (identity != null) {
             deactivated += context.punishmentRepository.deactivateForTarget(PunishmentType.BAN, identity.uuid, null)
             deactivated += context.punishmentRepository.deactivateForTarget(
-                PunishmentType.IP_BAN,
-                identity.uuid,
-                identity.ip
+                PunishmentType.IP_BAN, identity.uuid, identity.ip
             )
         }
         val byQuery =
@@ -303,8 +301,10 @@ class ModerationService(private val context: ObsidianContext) {
     suspend fun unmute(target: TargetIdentity): Boolean {
         val uuid = target.uuid ?: return false
         activeMutes.remove(uuid)
-        val removed = context.punishmentRepository.deactivateForTarget(PunishmentType.MUTE, uuid) +
-                context.punishmentRepository.deactivateForTarget(PunishmentType.SHADOW_MUTE, uuid)
+        val removed = context.punishmentRepository.deactivateForTarget(
+            PunishmentType.MUTE,
+            uuid
+        ) + context.punishmentRepository.deactivateForTarget(PunishmentType.SHADOW_MUTE, uuid)
         return removed > 0
     }
 
@@ -470,12 +470,7 @@ class ModerationService(private val context: ObsidianContext) {
             if (vanishNightVision) {
                 player.addPotionEffect(
                     PotionEffect(
-                        PotionEffectType.NIGHT_VISION,
-                        Int.MAX_VALUE,
-                        0,
-                        false,
-                        false,
-                        false
+                        PotionEffectType.NIGHT_VISION, Int.MAX_VALUE, 0, false, false, false
                     )
                 )
             }

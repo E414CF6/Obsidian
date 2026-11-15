@@ -117,8 +117,8 @@ class UserService(
         val player = event.player
         val now = System.currentTimeMillis()
         scheduler.asyncScope.launch {
-            val profile = repository.findByUuid(player.uniqueId)
-                ?: UserProfile(uuid = player.uniqueId, username = player.name)
+            val profile =
+                repository.findByUuid(player.uniqueId) ?: UserProfile(uuid = player.uniqueId, username = player.name)
             profile.username = player.name
             profile.lastLogin = now
             profile.markDirty()

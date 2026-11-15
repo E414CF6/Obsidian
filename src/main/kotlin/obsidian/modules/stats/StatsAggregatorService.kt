@@ -43,8 +43,7 @@ class StatsAggregatorService(
     private val worldDirProvider: () -> Path? = { resolveDefaultWorldDir() },
     private val onlinePlayersProvider: () -> Map<UUID, OnlinePlayerSnapshot> = {
         collectOnlineSnapshots(
-            rankService,
-            luckPermsHook
+            rankService, luckPermsHook
         )
     },
     private val skillsProvider: (UUID, String, Boolean) -> Map<String, PlayerSkillStat> = { uuid, _, isOnline ->
@@ -169,12 +168,9 @@ class StatsAggregatorService(
         if (query.isNullOrBlank()) return snapshot
         val q = query.trim().lowercase()
         val filtered = snapshot.players.filter { p ->
-            p.username.lowercase().contains(q) ||
-                    (p.nickname?.lowercase()?.contains(q) == true) ||
-                    (p.displayName?.lowercase()?.contains(q) == true) ||
-                    p.uuid.lowercase().contains(q) ||
-                    p.rank.lowercase().contains(q) ||
-                    p.primaryGroup.lowercase().contains(q)
+            p.username.lowercase().contains(q) || (p.nickname?.lowercase()
+                ?.contains(q) == true) || (p.displayName?.lowercase()?.contains(q) == true) || p.uuid.lowercase()
+                .contains(q) || p.rank.lowercase().contains(q) || p.primaryGroup.lowercase().contains(q)
         }
         return StatsApiResponse(snapshot.overview, filtered)
     }
@@ -254,11 +250,8 @@ class StatsAggregatorService(
             val online = onlineMap[uuid]
             val pt = playtimes[uuid]
 
-            val username = online?.username
-                ?: user?.username
-                ?: pt?.username
-                ?: economyNames[uuid]
-                ?: uuid.toString().take(8)
+            val username =
+                online?.username ?: user?.username ?: pt?.username ?: economyNames[uuid] ?: uuid.toString().take(8)
 
             val rawNick = nicknames[uuid]?.takeIf { it.isNotBlank() }
             val cleanNick = rawNick?.let { WorldDataReader.stripMinecraftCodes(it) }?.takeIf { it.isNotBlank() }

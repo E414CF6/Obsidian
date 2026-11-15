@@ -66,11 +66,8 @@ class HomeService(
         if (player.hasPermission("obsidian.sethome.unlimited") || player.hasPermission("obsidian.admin")) {
             return Int.MAX_VALUE
         }
-        val activePerms = player.effectivePermissions
-            .asSequence()
-            .filter { it.value }
-            .map { it.permission }
-            .asIterable()
+        val activePerms =
+            player.effectivePermissions.asSequence().filter { it.value }.map { it.permission }.asIterable()
         return resolveMaxNumericPermission(activePerms, "obsidian.sethome.", defaultMaxHomes)
     }
 

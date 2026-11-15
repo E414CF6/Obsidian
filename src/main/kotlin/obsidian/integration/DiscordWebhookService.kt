@@ -13,9 +13,7 @@ import java.time.Instant
  */
 class DiscordWebhookService(private val context: ObsidianContext) {
 
-    private val client: HttpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build()
+    private val client: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
 
     @Volatile
     var webhookUrl: String = ""
@@ -41,18 +39,13 @@ class DiscordWebhookService(private val context: ObsidianContext) {
     fun sendEmbedAsync(title: String, description: String, colorRgb: Int = 0x7C3AED) {
         if (!isConfigured()) return
         val payload = buildEmbedJson(username, title, description, colorRgb)
-        val request = HttpRequest.newBuilder()
-            .uri(URI.create(webhookUrl))
-            .timeout(Duration.ofSeconds(8))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(payload))
-            .build()
+        val request = HttpRequest.newBuilder().uri(URI.create(webhookUrl)).timeout(Duration.ofSeconds(8))
+            .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(payload)).build()
 
-        client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-            .exceptionally { err ->
-                context.plugin.logger.warning("Discord webhook failed: ${err.message}")
-                null
-            }
+        client.sendAsync(request, HttpResponse.BodyHandlers.discarding()).exceptionally { err ->
+            context.plugin.logger.warning("Discord webhook failed: ${err.message}")
+            null
+        }
     }
 
     companion object {

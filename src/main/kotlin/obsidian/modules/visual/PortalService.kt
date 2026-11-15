@@ -89,11 +89,7 @@ class PortalService(private val context: ObsidianContext) : Listener {
     fun onMove(event: PlayerMoveEvent) {
         val from = event.from
         val to = event.to
-        if (from.world == to.world &&
-            from.blockX == to.blockX &&
-            from.blockY == to.blockY &&
-            from.blockZ == to.blockZ
-        ) {
+        if (from.world == to.world && from.blockX == to.blockX && from.blockY == to.blockY && from.blockZ == to.blockZ) {
             return
         }
         if (portals.isEmpty()) return
@@ -105,9 +101,12 @@ class PortalService(private val context: ObsidianContext) : Listener {
         val bz = to.blockZ
 
         val matching = portals.values.firstOrNull {
-            it.enabled &&
-                    it.region.contains(worldName, bx, by, bz) &&
-                    !it.region.contains(from.world.name, from.blockX, from.blockY, from.blockZ)
+            it.enabled && it.region.contains(worldName, bx, by, bz) && !it.region.contains(
+                from.world.name,
+                from.blockX,
+                from.blockY,
+                from.blockZ
+            )
         } ?: return
 
         val perm = matching.permission

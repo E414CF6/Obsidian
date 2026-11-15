@@ -39,9 +39,7 @@ class CooldownService(private val config: ObsidianConfig) {
      * Returns remaining cooldown in milliseconds, or `0` if the sender can execute [commandKey].
      */
     fun getRemainingMillis(
-        sender: CommandSender,
-        commandKey: String,
-        nowMillis: Long = System.currentTimeMillis()
+        sender: CommandSender, commandKey: String, nowMillis: Long = System.currentTimeMillis()
     ): Long {
         if (!enabled || sender !is Player) return 0L
         val key = commandKey.lowercase()

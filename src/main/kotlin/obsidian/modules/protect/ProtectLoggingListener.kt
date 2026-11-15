@@ -76,9 +76,7 @@ class ProtectLoggingListener(
             return
         }
 
-        if (event.action == Action.RIGHT_CLICK_BLOCK && service.config.logPlayerInteractions &&
-            event.useInteractedBlock() != org.bukkit.event.Event.Result.DENY
-        ) {
+        if (event.action == Action.RIGHT_CLICK_BLOCK && service.config.logPlayerInteractions && event.useInteractedBlock() != org.bukkit.event.Event.Result.DENY) {
             if (isInteractiveBlock(clicked.type)) {
                 service.logBlockInteraction(player.name, clicked)
             }
@@ -132,11 +130,7 @@ class ProtectLoggingListener(
             for (item in state.inventory.contents) {
                 if (item != null && !item.type.isAir && item.amount > 0) {
                     service.logContainerTransaction(
-                        actor,
-                        block.location,
-                        added = false,
-                        item = item,
-                        amount = item.amount
+                        actor, block.location, added = false, item = item, amount = item.amount
                     )
                 }
             }
@@ -181,9 +175,7 @@ class ProtectLoggingListener(
         if (!service.config.logBuckets) return
         val block = event.blockClicked.getRelative(event.blockFace)
         val liquid = when (event.bucket) {
-            Material.WATER_BUCKET, Material.AXOLOTL_BUCKET, Material.COD_BUCKET,
-            Material.SALMON_BUCKET, Material.TROPICAL_FISH_BUCKET, Material.PUFFERFISH_BUCKET,
-            Material.TADPOLE_BUCKET -> Material.WATER
+            Material.WATER_BUCKET, Material.AXOLOTL_BUCKET, Material.COD_BUCKET, Material.SALMON_BUCKET, Material.TROPICAL_FISH_BUCKET, Material.PUFFERFISH_BUCKET, Material.TADPOLE_BUCKET -> Material.WATER
 
             Material.LAVA_BUCKET -> Material.LAVA
             Material.POWDER_SNOW_BUCKET -> Material.POWDER_SNOW
@@ -372,9 +364,8 @@ class ProtectLoggingListener(
         if (!service.config.logEntityKills) return
         val entity = event.entity
         if (entity is Player) return
-        val actor = entity.killer?.name
-            ?: entity.lastDamageCause?.cause?.name?.let { "#${it.lowercase()}" }
-            ?: "#environment"
+        val actor =
+            entity.killer?.name ?: entity.lastDamageCause?.cause?.name?.let { "#${it.lowercase()}" } ?: "#environment"
         service.logEntityKill(actor, entity)
     }
 
@@ -457,28 +448,7 @@ class ProtectLoggingListener(
     }
 
     private fun isInteractiveBlock(mat: Material): Boolean =
-        Tag.DOORS.isTagged(mat) ||
-                Tag.TRAPDOORS.isTagged(mat) ||
-                Tag.FENCE_GATES.isTagged(mat) ||
-                Tag.BUTTONS.isTagged(mat) ||
-                Tag.SHULKER_BOXES.isTagged(mat) ||
-                mat == Material.LEVER ||
-                mat == Material.CHEST ||
-                mat == Material.TRAPPED_CHEST ||
-                mat == Material.BARREL ||
-                mat == Material.ENDER_CHEST ||
-                mat == Material.HOPPER ||
-                mat == Material.DROPPER ||
-                mat == Material.DISPENSER ||
-                mat == Material.FURNACE ||
-                mat == Material.BLAST_FURNACE ||
-                mat == Material.SMOKER ||
-                mat == Material.BREWING_STAND ||
-                mat == Material.CRAFTING_TABLE ||
-                mat == Material.ANVIL ||
-                mat == Material.CHIPPED_ANVIL ||
-                mat == Material.DAMAGED_ANVIL ||
-                mat == Material.NOTE_BLOCK ||
-                mat == Material.JUKEBOX ||
-                mat == Material.LECTERN
+        Tag.DOORS.isTagged(mat) || Tag.TRAPDOORS.isTagged(mat) || Tag.FENCE_GATES.isTagged(mat) || Tag.BUTTONS.isTagged(
+            mat
+        ) || Tag.SHULKER_BOXES.isTagged(mat) || mat == Material.LEVER || mat == Material.CHEST || mat == Material.TRAPPED_CHEST || mat == Material.BARREL || mat == Material.ENDER_CHEST || mat == Material.HOPPER || mat == Material.DROPPER || mat == Material.DISPENSER || mat == Material.FURNACE || mat == Material.BLAST_FURNACE || mat == Material.SMOKER || mat == Material.BREWING_STAND || mat == Material.CRAFTING_TABLE || mat == Material.ANVIL || mat == Material.CHIPPED_ANVIL || mat == Material.DAMAGED_ANVIL || mat == Material.NOTE_BLOCK || mat == Material.JUKEBOX || mat == Material.LECTERN
 }

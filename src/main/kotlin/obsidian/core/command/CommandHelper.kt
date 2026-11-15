@@ -156,8 +156,7 @@ object CommandHelper {
                 context.reloadAll()
                 context.locale.send(ctx.source.sender, "general.reloaded")
                 Command.SINGLE_SUCCESS
-            })
-            .then(Commands.literal("modules").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
+            }).then(Commands.literal("modules").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
                 val sender = ctx.source.sender
                 context.modules.activeModules().forEach { mod ->
                     sender.sendMessage(

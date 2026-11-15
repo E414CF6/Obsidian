@@ -13,8 +13,7 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 enum class TpaType {
-    TO_TARGET,
-    HERE,
+    TO_TARGET, HERE,
 }
 
 data class TpaRequest(

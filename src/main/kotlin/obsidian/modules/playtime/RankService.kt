@@ -141,12 +141,7 @@ class RankService(private val context: ObsidianContext) : Listener {
         val state = sessions[player.uniqueId] ?: return RankUpResult.NotReady(null)
         accumulateSession(state)
         val current = getRank(state.record.currentRank) ?: RankDefinition(
-            state.record.currentRank,
-            state.record.currentRank,
-            null,
-            0L,
-            0.0,
-            emptyList()
+            state.record.currentRank, state.record.currentRank, null, 0L, 0.0, emptyList()
         )
         val nextId = current.nextRank ?: return RankUpResult.AlreadyMax(current)
         val nextRank = getRank(nextId) ?: return RankUpResult.AlreadyMax(current)

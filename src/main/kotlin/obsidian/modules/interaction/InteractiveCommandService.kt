@@ -140,7 +140,6 @@ class InteractiveCommandService(private val context: ObsidianContext) : Listener
     }
 
     companion object {
-        fun blockKey(loc: Location): String =
-            "${loc.world.name}:${loc.blockX}:${loc.blockY}:${loc.blockZ}"
+        fun blockKey(loc: Location): String = "${loc.world.name}:${loc.blockX}:${loc.blockY}:${loc.blockZ}"
     }
 }

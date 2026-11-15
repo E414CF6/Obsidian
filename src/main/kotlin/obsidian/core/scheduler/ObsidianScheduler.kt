@@ -34,8 +34,7 @@ class ObsidianScheduler(private val plugin: Plugin) {
         }
     }
 
-    fun runAsync(task: () -> Unit): ScheduledTask =
-        Bukkit.getAsyncScheduler().runNow(plugin) { task() }
+    fun runAsync(task: () -> Unit): ScheduledTask = Bukkit.getAsyncScheduler().runNow(plugin) { task() }
 
     fun runAsyncDelayed(delayMillis: Long, task: () -> Unit): ScheduledTask =
         Bukkit.getAsyncScheduler().runDelayed(plugin, { task() }, delayMillis, TimeUnit.MILLISECONDS)

@@ -241,11 +241,8 @@ object SpecializedCommandExecutor {
         }
         if (player != null) {
             val loc = player.location
-            out = out
-                .replace("{world}", loc.world.name)
-                .replace("{x}", loc.blockX.toString())
-                .replace("{y}", loc.blockY.toString())
-                .replace("{z}", loc.blockZ.toString())
+            out = out.replace("{world}", loc.world.name).replace("{x}", loc.blockX.toString())
+                .replace("{y}", loc.blockY.toString()).replace("{z}", loc.blockZ.toString())
         }
         val ph = context.getService<PlaceholderService>()
         return if (ph != null) {

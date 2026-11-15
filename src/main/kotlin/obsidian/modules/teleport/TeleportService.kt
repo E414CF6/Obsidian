@@ -46,9 +46,7 @@ class TeleportService(private val context: ObsidianContext) : Listener {
         invulnerabilitySeconds = raw.getInt("teleport.invulnerability-seconds", 3).coerceIn(0, 60)
         jumpDefaultDistance = raw.getInt("teleport.jump-default-distance", 50).coerceIn(5, 500)
         backMinDistance = raw.getDouble("teleport.back.min-distance", 5.0).coerceAtLeast(0.0)
-        backBlacklistedWorlds = raw.getStringList("teleport.back.blacklisted-worlds")
-            .map { it.lowercase() }
-            .toSet()
+        backBlacklistedWorlds = raw.getStringList("teleport.back.blacklisted-worlds").map { it.lowercase() }.toSet()
     }
 
     /**
@@ -103,11 +101,9 @@ class TeleportService(private val context: ObsidianContext) : Listener {
         profile.markDirty()
     }
 
-    fun getBackLocation(player: Player): Location? =
-        context.users.getCached(player).backLocation?.toBukkitLocation()
+    fun getBackLocation(player: Player): Location? = context.users.getCached(player).backLocation?.toBukkitLocation()
 
-    fun getDeathLocation(player: Player): Location? =
-        context.users.getCached(player).deathLocation?.toBukkitLocation()
+    fun getDeathLocation(player: Player): Location? = context.users.getCached(player).deathLocation?.toBukkitLocation()
 
     private fun grantInvulnerability(uuid: UUID) {
         if (invulnerabilitySeconds <= 0) return

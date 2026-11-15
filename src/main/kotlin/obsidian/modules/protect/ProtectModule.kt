@@ -61,39 +61,29 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
 
     override fun registerCommands(registrar: Commands) {
         val builder: (String) -> LiteralArgumentBuilder<CommandSourceStack> = { name ->
-            Commands.literal(name)
-                .requires {
+            Commands.literal(name).requires {
                     it.sender.hasPermission("obsidian.protect.co") || it.sender.hasPermission("obsidian.admin")
-                }
-                .executes { ctx ->
+                }.executes { ctx ->
                     sendHelp(ctx.source.sender, emptyList())
                     Command.SINGLE_SUCCESS
-                }
-                .then(
-                    Commands.argument("args", StringArgumentType.greedyString())
-                        .suggests { ctx, sb ->
-                            val input = sb.remainingLowerCase
-                            val parts = input.split(" ")
-                            if (parts.size <= 1) {
-                                subcommands.filter { it.startsWith(parts.firstOrNull().orEmpty()) }
-                                    .forEach(sb::suggest)
-                            } else {
-                                suggestFilterTokens(ctx.source.sender, parts.last())
-                                    .forEach { suggestion ->
-                                        val prefix = input.substringBeforeLast(' ', "")
-                                        sb.suggest(if (prefix.isEmpty()) suggestion else "$prefix $suggestion")
-                                    }
-                            }
-                            sb.buildFuture()
+                }.then(Commands.argument("args", StringArgumentType.greedyString()).suggests { ctx, sb ->
+                        val input = sb.remainingLowerCase
+                        val parts = input.split(" ")
+                        if (parts.size <= 1) {
+                            subcommands.filter { it.startsWith(parts.firstOrNull().orEmpty()) }.forEach(sb::suggest)
+                        } else {
+                            suggestFilterTokens(ctx.source.sender, parts.last()).forEach { suggestion ->
+                                    val prefix = input.substringBeforeLast(' ', "")
+                                    sb.suggest(if (prefix.isEmpty()) suggestion else "$prefix $suggestion")
+                                }
                         }
-                        .executes { ctx ->
-                            val raw = StringArgumentType.getString(ctx, "args")
-                            dispatchCommand(
-                                ctx.source.sender,
-                                raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
-                            Command.SINGLE_SUCCESS
-                        }
-                )
+                        sb.buildFuture()
+                    }.executes { ctx ->
+                        val raw = StringArgumentType.getString(ctx, "args")
+                        dispatchCommand(
+                            ctx.source.sender, raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
+                        Command.SINGLE_SUCCESS
+                    })
         }
 
         CommandHelper.registerWithOptionalAliases(
@@ -155,9 +145,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
 
             "near" -> {
                 if (!checkPerm(sender, "obsidian.protect.lookup")) return
-                val radius = tail.firstOrNull()?.toIntOrNull()
-                    ?.coerceIn(1, service.config.maxRadius)
-                    ?: 5
+                val radius = tail.firstOrNull()?.toIntOrNull()?.coerceIn(1, service.config.maxRadius) ?: 5
                 val parsed = parseForSender(sender, listOf("r:$radius"), defaultRadius = radius) ?: return
                 engine.performLookup(sender, parsed)
             }
@@ -373,19 +361,43 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                 CommandHelper.suggestOnlinePlayers(sender, typed).map { "u:$it" }
             }
 
-            lower.startsWith("t:") -> listOf("t:5m", "t:30m", "t:1h", "t:6h", "t:1d", "t:7d", "t:30d")
-                .filter { it.startsWith(lower) }
+            lower.startsWith("t:") -> listOf(
+                "t:5m",
+                "t:30m",
+                "t:1h",
+                "t:6h",
+                "t:1d",
+                "t:7d",
+                "t:30d"
+            ).filter { it.startsWith(lower) }
 
-            lower.startsWith("r:") -> listOf("r:5", "r:10", "r:25", "r:50", "r:#global", "r:#selection")
-                .filter { it.startsWith(lower) }
+            lower.startsWith("r:") -> listOf(
+                "r:5",
+                "r:10",
+                "r:25",
+                "r:50",
+                "r:#global",
+                "r:#selection"
+            ).filter { it.startsWith(lower) }
 
             lower.startsWith("a:") -> listOf(
                 "a:block", "a:+block", "a:-block", "a:container", "a:+container", "a:-container",
                 "a:click", "a:kill", "a:spawn", "a:chat", "a:command", "a:session", "a:sign",
             ).filter { it.startsWith(lower) }
 
-            else -> listOf("u:", "t:", "r:", "a:", "i:", "e:", "f:", "#preview", "#count", "#global", "#selection")
-                .filter { it.startsWith(lower) }
+            else -> listOf(
+                "u:",
+                "t:",
+                "r:",
+                "a:",
+                "i:",
+                "e:",
+                "f:",
+                "#preview",
+                "#count",
+                "#global",
+                "#selection"
+            ).filter { it.startsWith(lower) }
         }
     }
 

@@ -21,17 +21,7 @@ object ProtectActions {
 }
 
 enum class ProtectFilterAction {
-    BLOCK_BREAK,
-    BLOCK_PLACE,
-    INTERACT,
-    CONTAINER_REMOVE,
-    CONTAINER_ADD,
-    ENTITY_KILL,
-    ENTITY_SPAWN,
-    CHAT,
-    COMMAND,
-    SESSION,
-    SIGN,
+    BLOCK_BREAK, BLOCK_PLACE, INTERACT, CONTAINER_REMOVE, CONTAINER_ADD, ENTITY_KILL, ENTITY_SPAWN, CHAT, COMMAND, SESSION, SIGN,
 }
 
 data class ProtectCuboid(

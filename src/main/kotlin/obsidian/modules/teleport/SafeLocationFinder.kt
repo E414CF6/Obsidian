@@ -33,16 +33,12 @@ object SafeLocationFinder {
         material: Material,
         isSolidFn: (Material) -> Boolean = { it.isSolid },
     ): Boolean =
-        material != Material.LAVA &&
-                material != Material.WATER &&
-                !isHazardous(material) &&
-                !isSolidFn(material)
+        material != Material.LAVA && material != Material.WATER && !isHazardous(material) && !isSolidFn(material)
 
     fun isSafeFloor(
         material: Material,
         isSolidFn: (Material) -> Boolean = { it.isSolid },
-    ): Boolean =
-        !isHazardous(material) && isSolidFn(material)
+    ): Boolean = !isHazardous(material) && isSolidFn(material)
 
     fun isSafeStandingColumn(
         floor: Material,
@@ -50,9 +46,7 @@ object SafeLocationFinder {
         head: Material,
         isSolidFn: (Material) -> Boolean = { it.isSolid },
     ): Boolean =
-        isSafeFloor(floor, isSolidFn) &&
-                isPassableForBody(feet, isSolidFn) &&
-                isPassableForBody(head, isSolidFn)
+        isSafeFloor(floor, isSolidFn) && isPassableForBody(feet, isSolidFn) && isPassableForBody(head, isSolidFn)
 
     /**
      * Checks whether [location] falls inside the world's border.
@@ -87,8 +81,8 @@ object SafeLocationFinder {
             val minY = world.minHeight + 1
             val startY = target.blockY.coerceIn(minY, maxY)
 
-            val foundY = searchColumn(snapshot, localX, localZ, startY, minY, maxY, downThenUp)
-                ?: return@thenApplyAsync null
+            val foundY =
+                searchColumn(snapshot, localX, localZ, startY, minY, maxY, downThenUp) ?: return@thenApplyAsync null
 
             Location(
                 world,

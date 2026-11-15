@@ -205,51 +205,39 @@ object ProtectCommandParser {
 
                 "a", "action" -> {
                     value.split(',').map { it.trim().lowercase(Locale.ROOT).removePrefix("#") }
-                        .filter { it.isNotEmpty() }
-                        .forEach { act ->
+                        .filter { it.isNotEmpty() }.forEach { act ->
                             when (act) {
                                 "block", "blocks" -> {
                                     actions += ProtectFilterAction.BLOCK_BREAK
                                     actions += ProtectFilterAction.BLOCK_PLACE
                                 }
 
-                                "+block", "block+", "place", "placed", "block-place" ->
-                                    actions += ProtectFilterAction.BLOCK_PLACE
+                                "+block", "block+", "place", "placed", "block-place" -> actions += ProtectFilterAction.BLOCK_PLACE
 
-                                "-block", "block-", "break", "broke", "remove", "destroy", "block-break" ->
-                                    actions += ProtectFilterAction.BLOCK_BREAK
+                                "-block", "block-", "break", "broke", "remove", "destroy", "block-break" -> actions += ProtectFilterAction.BLOCK_BREAK
 
-                                "click", "clicks", "interact", "interaction" ->
-                                    actions += ProtectFilterAction.INTERACT
+                                "click", "clicks", "interact", "interaction" -> actions += ProtectFilterAction.INTERACT
 
                                 "container", "containers", "chest", "inventory", "transaction" -> {
                                     actions += ProtectFilterAction.CONTAINER_REMOVE
                                     actions += ProtectFilterAction.CONTAINER_ADD
                                 }
 
-                                "+container", "container+", "add-container" ->
-                                    actions += ProtectFilterAction.CONTAINER_ADD
+                                "+container", "container+", "add-container" -> actions += ProtectFilterAction.CONTAINER_ADD
 
-                                "-container", "container-", "remove-container" ->
-                                    actions += ProtectFilterAction.CONTAINER_REMOVE
+                                "-container", "container-", "remove-container" -> actions += ProtectFilterAction.CONTAINER_REMOVE
 
-                                "kill", "kills", "death", "deaths", "entity-kill" ->
-                                    actions += ProtectFilterAction.ENTITY_KILL
+                                "kill", "kills", "death", "deaths", "entity-kill" -> actions += ProtectFilterAction.ENTITY_KILL
 
-                                "spawn", "spawns", "entity-spawn" ->
-                                    actions += ProtectFilterAction.ENTITY_SPAWN
+                                "spawn", "spawns", "entity-spawn" -> actions += ProtectFilterAction.ENTITY_SPAWN
 
-                                "chat", "message", "messages" ->
-                                    actions += ProtectFilterAction.CHAT
+                                "chat", "message", "messages" -> actions += ProtectFilterAction.CHAT
 
-                                "command", "commands", "cmd" ->
-                                    actions += ProtectFilterAction.COMMAND
+                                "command", "commands", "cmd" -> actions += ProtectFilterAction.COMMAND
 
-                                "session", "sessions", "login", "logout" ->
-                                    actions += ProtectFilterAction.SESSION
+                                "session", "sessions", "login", "logout" -> actions += ProtectFilterAction.SESSION
 
-                                "sign", "signs" ->
-                                    actions += ProtectFilterAction.SIGN
+                                "sign", "signs" -> actions += ProtectFilterAction.SIGN
 
                                 else -> return Result.failure(IllegalArgumentException("Unknown action '$act'."))
                             }
@@ -258,14 +246,12 @@ object ProtectCommandParser {
 
                 "i", "b", "include", "block", "blocks" -> {
                     value.split(',').map { it.trim().uppercase(Locale.ROOT).removePrefix("MINECRAFT:") }
-                        .filter { it.isNotEmpty() }
-                        .forEach { includes += it }
+                        .filter { it.isNotEmpty() }.forEach { includes += it }
                 }
 
                 "e", "exclude" -> {
                     value.split(',').map { it.trim().uppercase(Locale.ROOT).removePrefix("MINECRAFT:") }
-                        .filter { it.isNotEmpty() }
-                        .forEach { excludes += it }
+                        .filter { it.isNotEmpty() }.forEach { excludes += it }
                 }
 
                 "f", "filter" -> {

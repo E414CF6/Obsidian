@@ -32,10 +32,7 @@ data class CuboidRegion(
     fun volume(): Long = widthX().toLong() * heightY().toLong() * lengthZ().toLong()
 
     fun contains(world: String, x: Int, y: Int, z: Int): Boolean =
-        worldName.equals(world, ignoreCase = true) &&
-                x in minX..maxX &&
-                y in minY..maxY &&
-                z in minZ..maxZ
+        worldName.equals(world, ignoreCase = true) && x in minX..maxX && y in minY..maxY && z in minZ..maxZ
 
     fun contains(location: Location): Boolean {
         val world = location.world ?: return false

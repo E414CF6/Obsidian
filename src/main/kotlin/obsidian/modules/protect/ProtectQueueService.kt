@@ -57,8 +57,7 @@ class ProtectQueueService(
         messageQueue.add(entry)
     }
 
-    fun pendingCount(): Int =
-        blockQueue.size + containerQueue.size + entityQueue.size + messageQueue.size
+    fun pendingCount(): Int = blockQueue.size + containerQueue.size + entityQueue.size + messageQueue.size
 
     fun pendingBreakdown(): String =
         "blocks=${blockQueue.size}, containers=${containerQueue.size}, entities=${entityQueue.size}, messages=${messageQueue.size}"

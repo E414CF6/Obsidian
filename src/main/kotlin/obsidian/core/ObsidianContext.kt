@@ -1,5 +1,7 @@
 package obsidian.core
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import obsidian.core.command.CooldownService
 import obsidian.core.command.WarmupService
@@ -56,7 +58,11 @@ class ObsidianContext(val plugin: JavaPlugin) {
         val interval = config.autoSaveIntervalSeconds
         scheduler.runAsyncTimer(interval, interval) {
             scheduler.asyncScope.launch {
-                runCatching { users.flushDirty() }.onFailure { err ->
+                runCatching { users.flushDirty() }.onFailure {
+                    if (it is CancellationException) {
+                        ensureActive()
+                    }
+                }.onFailure { err ->
                     plugin.logger.warning("Autosave error: ${err.message}")
                 }
             }

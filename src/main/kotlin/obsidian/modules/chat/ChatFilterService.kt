@@ -46,10 +46,7 @@ class ChatFilterService(private val context: ObsidianContext) {
     }
 
     fun checkAndProcess(
-        senderUuid: UUID?,
-        rawMessage: String,
-        bypass: Boolean,
-        now: Long = System.currentTimeMillis()
+        senderUuid: UUID?, rawMessage: String, bypass: Boolean, now: Long = System.currentTimeMillis()
     ): FilterOutcome {
         if (!enabled || bypass) return FilterOutcome.Allowed(rawMessage)
 

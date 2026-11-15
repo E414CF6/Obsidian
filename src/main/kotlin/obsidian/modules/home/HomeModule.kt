@@ -43,23 +43,16 @@ class HomeModule(
             .executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 handleSetHome(player, null, override = false)
-            }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
+            }.then(
+                Commands.argument("name", StringArgumentType.word()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    handleSetHome(player, StringArgumentType.getString(ctx, "name"), override = false)
+                }.then(
+                    Commands.literal("-override").executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        handleSetHome(player, StringArgumentType.getString(ctx, "name"), override = false)
-                    }
-                    .then(
-                        Commands.literal("-override")
-                            .executes { ctx ->
-                                val player =
-                                    CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                                handleSetHome(player, StringArgumentType.getString(ctx, "name"), override = true)
-                            }
-                    )
-            )
-            .build()
+                        handleSetHome(player, StringArgumentType.getString(ctx, "name"), override = true)
+                    })
+            ).build()
         registrar.register(context.plugin.pluginMeta, node, "Set a personal home location", emptyList())
     }
 
@@ -107,32 +100,24 @@ class HomeModule(
                     sendHomeTextList(player)
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .suggests { ctx, builder ->
-                        val player = ctx.source.sender as? Player
-                        if (player != null) {
-                            homeService.getHomes(player.uniqueId)
-                                .map { it.name }
-                                .filter { it.startsWith(builder.remaining, ignoreCase = true) }
-                                .forEach { builder.suggest(it) }
-                        }
-                        builder.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val name = StringArgumentType.getString(ctx, "name")
-                        val record = homeService.getHome(player.uniqueId, name)
-                        if (record == null) {
-                            context.locale.send(player, "home.not-found", "home" to name)
-                            return@executes 0
-                        }
-                        homeService.teleportToHome(player, record)
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            }.then(Commands.argument("name", StringArgumentType.word()).suggests { ctx, builder ->
+                val player = ctx.source.sender as? Player
+                if (player != null) {
+                    homeService.getHomes(player.uniqueId).map { it.name }
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
+                }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val name = StringArgumentType.getString(ctx, "name")
+                val record = homeService.getHome(player.uniqueId, name)
+                if (record == null) {
+                    context.locale.send(player, "home.not-found", "home" to name)
+                    return@executes 0
+                }
+                homeService.teleportToHome(player, record)
+                Command.SINGLE_SUCCESS
+            }).build()
         registrar.register(context.plugin.pluginMeta, node, "Teleport to a home", emptyList())
     }
 
@@ -152,38 +137,30 @@ class HomeModule(
                     sendHomeTextList(player)
                 }
                 Command.SINGLE_SUCCESS
-            }
-            .build()
+            }.build()
         registrar.register(context.plugin.pluginMeta, node, "List saved homes", emptyList())
     }
 
     private fun registerRemoveHome(registrar: Commands) {
         val node = Commands.literal("removehome")
             .requires { it.sender.hasPermission("obsidian.command.removehome") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .suggests { ctx, builder ->
-                        val player = ctx.source.sender as? Player
-                        if (player != null) {
-                            homeService.getHomes(player.uniqueId)
-                                .map { it.name }
-                                .filter { it.startsWith(builder.remaining, ignoreCase = true) }
-                                .forEach { builder.suggest(it) }
-                        }
-                        builder.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val name = StringArgumentType.getString(ctx, "name")
-                        if (homeService.deleteHome(player, name)) {
-                            context.locale.send(player, "home.removed", "home" to name)
-                        } else {
-                            context.locale.send(player, "home.not-found", "home" to name)
-                        }
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            .then(Commands.argument("name", StringArgumentType.word()).suggests { ctx, builder ->
+                val player = ctx.source.sender as? Player
+                if (player != null) {
+                    homeService.getHomes(player.uniqueId).map { it.name }
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
+                }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val name = StringArgumentType.getString(ctx, "name")
+                if (homeService.deleteHome(player, name)) {
+                    context.locale.send(player, "home.removed", "home" to name)
+                } else {
+                    context.locale.send(player, "home.not-found", "home" to name)
+                }
+                Command.SINGLE_SUCCESS
+            }).build()
 
         registrar.register(
             context.plugin.pluginMeta,

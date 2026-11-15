@@ -18,8 +18,7 @@ object DurationParser {
         if (trimmed in setOf("perm", "permanent", "forever", "inf", "infinite")) {
             return null
         }
-        val millis = parseMillis(trimmed)
-            ?: throw IllegalArgumentException("Invalid duration: $raw")
+        val millis = parseMillis(trimmed) ?: throw IllegalArgumentException("Invalid duration: $raw")
         return millis
     }
 

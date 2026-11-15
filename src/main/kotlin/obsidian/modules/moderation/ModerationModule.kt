@@ -49,50 +49,52 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerBanCommands(registrar: Commands) {
         val banNode = Commands.literal("ban")
             .requires { it.sender.hasPermission("obsidian.command.ban") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        executeBan(
-                            ctx.source.sender,
-                            StringArgumentType.getString(ctx, "target"),
-                            null,
-                            null,
-                            ipBan = false
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("reason", StringArgumentType.greedyString())
-                            .executes { ctx ->
-                                executeBan(
-                                    ctx.source.sender,
-                                    StringArgumentType.getString(ctx, "target"),
-                                    null,
-                                    StringArgumentType.getString(ctx, "reason"),
-                                    ipBan = false,
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    executeBan(
+                        ctx.source.sender, StringArgumentType.getString(ctx, "target"), null, null, ipBan = false
                     )
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
+                            executeBan(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                null,
+                                StringArgumentType.getString(ctx, "reason"),
+                                ipBan = false,
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, banNode, "Permanently ban a player", emptyList())
 
         val tempBanNode = Commands.literal("tempban")
             .requires { it.sender.hasPermission("obsidian.command.tempban") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .then(
-                        Commands.argument("duration", StringArgumentType.word())
-                            .executes { ctx ->
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.then(Commands.argument("duration", StringArgumentType.word()).executes { ctx ->
+                        val dur = DurationParser.parseMillis(StringArgumentType.getString(ctx, "duration"))
+                        if (dur == null) {
+                            context.locale.send(
+                                ctx.source.sender,
+                                "general.invalid-number",
+                                "input" to StringArgumentType.getString(ctx, "duration")
+                            )
+                            return@executes 0
+                        }
+                        executeBan(
+                            ctx.source.sender,
+                            StringArgumentType.getString(ctx, "target"),
+                            dur,
+                            null,
+                            ipBan = false
+                        )
+                        Command.SINGLE_SUCCESS
+                    }.then(
+                        Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
                                 val dur = DurationParser.parseMillis(StringArgumentType.getString(ctx, "duration"))
                                 if (dur == null) {
                                     context.locale.send(
@@ -106,77 +108,39 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                                     ctx.source.sender,
                                     StringArgumentType.getString(ctx, "target"),
                                     dur,
-                                    null,
-                                    ipBan = false
+                                    StringArgumentType.getString(ctx, "reason"),
+                                    ipBan = false,
                                 )
                                 Command.SINGLE_SUCCESS
-                            }
-                            .then(
-                                Commands.argument("reason", StringArgumentType.greedyString())
-                                    .executes { ctx ->
-                                        val dur =
-                                            DurationParser.parseMillis(StringArgumentType.getString(ctx, "duration"))
-                                        if (dur == null) {
-                                            context.locale.send(
-                                                ctx.source.sender,
-                                                "general.invalid-number",
-                                                "input" to StringArgumentType.getString(ctx, "duration")
-                                            )
-                                            return@executes 0
-                                        }
-                                        executeBan(
-                                            ctx.source.sender,
-                                            StringArgumentType.getString(ctx, "target"),
-                                            dur,
-                                            StringArgumentType.getString(ctx, "reason"),
-                                            ipBan = false,
-                                        )
-                                        Command.SINGLE_SUCCESS
-                                    }
-                            )
-                    )
-            )
-            .build()
+                            }))).build()
         registrar.register(context.plugin.pluginMeta, tempBanNode, "Temporarily ban a player", emptyList())
 
         val ipBanNode = Commands.literal("ipban")
             .requires { it.sender.hasPermission("obsidian.command.ipban") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        executeBan(
-                            ctx.source.sender,
-                            StringArgumentType.getString(ctx, "target"),
-                            null,
-                            null,
-                            ipBan = true
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("tail", StringArgumentType.greedyString())
-                            .executes { ctx ->
-                                val tail = StringArgumentType.getString(ctx, "tail").trim()
-                                val firstToken = tail.substringBefore(' ')
-                                val parsedDur = DurationParser.parseMillis(firstToken)
-                                val reason = if (parsedDur != null) tail.substringAfter(' ', "").trim()
-                                    .ifEmpty { null } else tail
-                                executeBan(
-                                    ctx.source.sender,
-                                    StringArgumentType.getString(ctx, "target"),
-                                    parsedDur,
-                                    reason,
-                                    ipBan = true
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    executeBan(
+                        ctx.source.sender, StringArgumentType.getString(ctx, "target"), null, null, ipBan = true
                     )
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("tail", StringArgumentType.greedyString()).executes { ctx ->
+                            val tail = StringArgumentType.getString(ctx, "tail").trim()
+                            val firstToken = tail.substringBefore(' ')
+                            val parsedDur = DurationParser.parseMillis(firstToken)
+                            val reason = if (parsedDur != null) tail.substringAfter(' ', "").trim()
+                                .ifEmpty { null } else tail
+                            executeBan(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                parsedDur,
+                                reason,
+                                ipBan = true
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(
             context.plugin.pluginMeta,
             ipBanNode,
@@ -187,8 +151,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         val unbanNode = Commands.literal("unban")
             .requires { it.sender.hasPermission("obsidian.command.unban") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("target", StringArgumentType.word()).executes { ctx ->
                         val sender = ctx.source.sender
                         val query = StringArgumentType.getString(ctx, "target")
                         CommandHelper.dispatchAsync(
@@ -204,9 +167,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             },
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(
             context.plugin.pluginMeta,
             unbanNode,
@@ -217,8 +178,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         val checkBanNode = Commands.literal("checkban")
             .requires { it.sender.hasPermission("obsidian.command.checkban") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("target", StringArgumentType.word()).executes { ctx ->
                         val sender = ctx.source.sender
                         val query = StringArgumentType.getString(ctx, "target")
                         CommandHelper.dispatchAsync(
@@ -245,9 +205,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             },
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, checkBanNode, "Check active ban info", emptyList())
     }
 
@@ -282,37 +240,27 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerKick(registrar: Commands) {
         val node = Commands.literal("kick")
             .requires { it.sender.hasPermission("obsidian.command.kick") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val target =
-                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
-                                .firstOrNull() ?: return@executes 0
-                        val reason = moderationService.defaultKickReason
-                        target.kick(TextFormatter.format("<red>$reason</red>"))
-                        context.locale.send(sender, "moderation.kicked", "target" to target.name, "reason" to reason)
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("reason", StringArgumentType.greedyString())
-                            .executes { ctx ->
-                                val sender = ctx.source.sender
-                                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                val reason = StringArgumentType.getString(ctx, "reason")
-                                target.kick(TextFormatter.format("<red>$reason</red>"))
-                                context.locale.send(
-                                    sender,
-                                    "moderation.kicked",
-                                    "target" to target.name,
-                                    "reason" to reason
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
-                    )
-            )
-            .build()
+            .then(Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val target =
+                        ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                            .firstOrNull() ?: return@executes 0
+                    val reason = moderationService.defaultKickReason
+                    target.kick(TextFormatter.format("<red>$reason</red>"))
+                    context.locale.send(sender, "moderation.kicked", "target" to target.name, "reason" to reason)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
+                            val sender = ctx.source.sender
+                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                            val reason = StringArgumentType.getString(ctx, "reason")
+                            target.kick(TextFormatter.format("<red>$reason</red>"))
+                            context.locale.send(
+                                sender, "moderation.kicked", "target" to target.name, "reason" to reason
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, node, "Kick an online player", emptyList())
     }
 
@@ -322,69 +270,53 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
 
         val unmuteNode = Commands.literal("unmute")
             .requires { it.sender.hasPermission("obsidian.command.unmute") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val query = StringArgumentType.getString(ctx, "target")
-                        CommandHelper.dispatchAsync(
-                            context,
-                            sender,
-                            asyncWork = {
-                                val id = moderationService.resolveTarget(query)
-                                if (id == null) null else id to moderationService.unmute(id)
-                            },
-                            onResult = { res ->
-                                if (res != null && res.second) {
-                                    context.locale.send(sender, "moderation.unmuted", "target" to res.first.name)
-                                } else {
-                                    context.locale.send(sender, "moderation.not-muted", "target" to query)
-                                }
-                            },
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val query = StringArgumentType.getString(ctx, "target")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = {
+                            val id = moderationService.resolveTarget(query)
+                            if (id == null) null else id to moderationService.unmute(id)
+                        },
+                        onResult = { res ->
+                            if (res != null && res.second) {
+                                context.locale.send(sender, "moderation.unmuted", "target" to res.first.name)
+                            } else {
+                                context.locale.send(sender, "moderation.not-muted", "target" to query)
+                            }
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, unmuteNode, "Unmute a player", emptyList())
     }
 
     private fun registerMuteLiteral(registrar: Commands, literal: String, shadow: Boolean) {
         val node = Commands.literal(literal)
             .requires { it.sender.hasPermission("obsidian.command.$literal") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        executeMute(ctx.source.sender, StringArgumentType.getString(ctx, "target"), null, shadow)
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("tail", StringArgumentType.greedyString())
-                            .executes { ctx ->
-                                executeMute(
-                                    ctx.source.sender,
-                                    StringArgumentType.getString(ctx, "target"),
-                                    StringArgumentType.getString(ctx, "tail"),
-                                    shadow,
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
-                    )
-            )
-            .build()
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    executeMute(ctx.source.sender, StringArgumentType.getString(ctx, "target"), null, shadow)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("tail", StringArgumentType.greedyString()).executes { ctx ->
+                            executeMute(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                StringArgumentType.getString(ctx, "tail"),
+                                shadow,
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(
-            context.plugin.pluginMeta,
-            node,
-            if (shadow) "Shadow mute a player" else "Mute a player",
-            emptyList()
+            context.plugin.pluginMeta, node, if (shadow) "Shadow mute a player" else "Mute a player", emptyList()
         )
     }
 
@@ -423,29 +355,21 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerWarnCommands(registrar: Commands) {
         val warnNode = Commands.literal("warn")
             .requires { it.sender.hasPermission("obsidian.command.warn") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        executeWarn(ctx.source.sender, StringArgumentType.getString(ctx, "target"), null)
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("reason", StringArgumentType.greedyString())
-                            .executes { ctx ->
-                                executeWarn(
-                                    ctx.source.sender,
-                                    StringArgumentType.getString(ctx, "target"),
-                                    StringArgumentType.getString(ctx, "reason"),
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
-                    )
-            )
-            .build()
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    executeWarn(ctx.source.sender, StringArgumentType.getString(ctx, "target"), null)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
+                            executeWarn(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                StringArgumentType.getString(ctx, "reason"),
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, warnNode, "Warn a player", emptyList())
 
         val warningsNode = Commands.literal("warnings")
@@ -454,26 +378,19 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 showWarnings(player, player.name)
                 Command.SINGLE_SUCCESS
-            }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        showWarnings(ctx.source.sender, StringArgumentType.getString(ctx, "target"))
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            }.then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    showWarnings(ctx.source.sender, StringArgumentType.getString(ctx, "target"))
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, warningsNode, "View active player warnings", emptyList())
 
         val clearWarnNode = Commands.literal("clearwarnings")
             .requires { it.sender.hasPermission("obsidian.command.clearwarnings") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("target", StringArgumentType.word()).executes { ctx ->
                         val sender = ctx.source.sender
                         val query = StringArgumentType.getString(ctx, "target")
                         CommandHelper.dispatchAsync(
@@ -495,9 +412,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             },
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, clearWarnNode, "Clear warnings for a player", emptyList())
     }
 
@@ -554,38 +469,30 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         val setJailNode = Commands.literal("setjail")
             .requires { it.sender.hasPermission("obsidian.command.setjail") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("name", StringArgumentType.word()).executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val name = StringArgumentType.getString(ctx, "name")
                         moderationService.setJail(name, player.location)
                         context.locale.send(player, "moderation.jail-set", "jail" to name)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, setJailNode, "Create a jail location", emptyList())
 
         val delJailNode = Commands.literal("deljail")
             .requires { it.sender.hasPermission("obsidian.command.deljail") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .suggests { _, b ->
-                        moderationService.getJailNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
-                        b.buildFuture()
+            .then(Commands.argument("name", StringArgumentType.word()).suggests { _, b ->
+                    moderationService.getJailNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val name = StringArgumentType.getString(ctx, "name")
+                    if (moderationService.removeJail(name)) {
+                        context.locale.send(sender, "moderation.jail-removed", "jail" to name)
+                    } else {
+                        context.locale.send(sender, "moderation.jail-not-found", "jail" to name)
                     }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val name = StringArgumentType.getString(ctx, "name")
-                        if (moderationService.removeJail(name)) {
-                            context.locale.send(sender, "moderation.jail-removed", "jail" to name)
-                        } else {
-                            context.locale.send(sender, "moderation.jail-not-found", "jail" to name)
-                        }
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta,
             delJailNode,
@@ -595,66 +502,49 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
 
         val jailNode = Commands.literal("jail")
             .requires { it.sender.hasPermission("obsidian.command.jail") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .then(
-                        Commands.argument("duration", StringArgumentType.word())
-                            .executes { ctx ->
-                                val defaultJail = moderationService.getJailNames().firstOrNull()
-                                executeJail(
-                                    ctx.source.sender,
-                                    StringArgumentType.getString(ctx, "target"),
-                                    StringArgumentType.getString(ctx, "duration"),
-                                    defaultJail ?: "",
-                                    null,
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
-                            .then(
-                                Commands.argument("jail", StringArgumentType.word())
-                                    .suggests { _, b ->
-                                        moderationService.getJailNames().filter { it.startsWith(b.remaining, true) }
-                                            .forEach(b::suggest)
-                                        b.buildFuture()
-                                    }
-                                    .executes { ctx ->
-                                        executeJail(
-                                            ctx.source.sender,
-                                            StringArgumentType.getString(ctx, "target"),
-                                            StringArgumentType.getString(ctx, "duration"),
-                                            StringArgumentType.getString(ctx, "jail"),
-                                            null,
-                                        )
-                                        Command.SINGLE_SUCCESS
-                                    }
-                                    .then(
-                                        Commands.argument("reason", StringArgumentType.greedyString())
-                                            .executes { ctx ->
-                                                executeJail(
-                                                    ctx.source.sender,
-                                                    StringArgumentType.getString(ctx, "target"),
-                                                    StringArgumentType.getString(ctx, "duration"),
-                                                    StringArgumentType.getString(ctx, "jail"),
-                                                    StringArgumentType.getString(ctx, "reason"),
-                                                )
-                                                Command.SINGLE_SUCCESS
-                                            }
-                                    )
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.then(Commands.argument("duration", StringArgumentType.word()).executes { ctx ->
+                        val defaultJail = moderationService.getJailNames().firstOrNull()
+                        executeJail(
+                            ctx.source.sender,
+                            StringArgumentType.getString(ctx, "target"),
+                            StringArgumentType.getString(ctx, "duration"),
+                            defaultJail ?: "",
+                            null,
+                        )
+                        Command.SINGLE_SUCCESS
+                    }.then(Commands.argument("jail", StringArgumentType.word()).suggests { _, b ->
+                            moderationService.getJailNames().filter { it.startsWith(b.remaining, true) }
+                                .forEach(b::suggest)
+                            b.buildFuture()
+                        }.executes { ctx ->
+                            executeJail(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                StringArgumentType.getString(ctx, "duration"),
+                                StringArgumentType.getString(ctx, "jail"),
+                                null,
                             )
-                    )
-            )
-            .build()
+                            Command.SINGLE_SUCCESS
+                        }.then(
+                            Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
+                                    executeJail(
+                                        ctx.source.sender,
+                                        StringArgumentType.getString(ctx, "target"),
+                                        StringArgumentType.getString(ctx, "duration"),
+                                        StringArgumentType.getString(ctx, "jail"),
+                                        StringArgumentType.getString(ctx, "reason"),
+                                    )
+                                    Command.SINGLE_SUCCESS
+                                })))).build()
         registrar.register(context.plugin.pluginMeta, jailNode, "Jail a player", emptyList())
 
         val unjailNode = Commands.literal("unjail")
             .requires { it.sender.hasPermission("obsidian.command.unjail") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("target", StringArgumentType.word()).executes { ctx ->
                         val sender = ctx.source.sender
                         val query = StringArgumentType.getString(ctx, "target")
                         CommandHelper.dispatchAsync(
@@ -670,9 +560,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             },
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, unjailNode, "Release a player from jail", emptyList())
     }
 
@@ -716,8 +604,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         val cuffNode = Commands.literal("cuff")
             .requires { it.sender.hasPermission("obsidian.command.cuff") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
+                Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                         val sender = ctx.source.sender
                         val target =
                             ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
@@ -730,9 +617,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             "state" to if (state) "ON" else "OFF"
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, cuffNode, "Toggle handcuffs on a player", emptyList())
 
         val vanishNode = Commands.literal("vanish")
@@ -741,10 +626,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val next = moderationService.toggleVanish(player)
                 context.locale.send(
-                    player,
-                    "moderation.vanish-toggled",
-                    "target" to player.name,
-                    "state" to if (next) "ON" else "OFF"
+                    player, "moderation.vanish-toggled", "target" to player.name, "state" to if (next) "ON" else "OFF"
                 )
                 Command.SINGLE_SUCCESS
             }
@@ -764,9 +646,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             "state" to if (next) "ON" else "OFF"
                         )
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(
             context.plugin.pluginMeta,
             vanishNode,
@@ -779,8 +659,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         val invNode = Commands.literal("inv")
             .requires { it.sender.hasPermission("obsidian.command.inv") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("target", ArgumentTypes.player())
-                    .executes { ctx ->
+                Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                         val viewer = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val target =
                             ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
@@ -788,9 +667,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                         viewer.openInventory(target.inventory)
                         context.locale.send(viewer, "moderation.inv-opened", "target" to target.name)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(
             context.plugin.pluginMeta,
             invNode,
@@ -800,235 +677,189 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
 
         val invSaveNode = Commands.literal("invsave")
             .requires { it.sender.hasPermission("obsidian.command.invsave") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val snapName = StringArgumentType.getString(ctx, "name")
-                        CommandHelper.dispatchAsync(
-                            context,
-                            player,
-                            asyncWork = { moderationService.saveInventorySnapshot(player, snapName) },
-                            onResult = {
-                                context.locale.send(
-                                    player,
-                                    "moderation.inv-saved",
-                                    "name" to snapName,
-                                    "target" to player.name
-                                )
-                            },
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("target", ArgumentTypes.player())
-                            .executes { ctx ->
-                                val sender = ctx.source.sender
-                                val snapName = StringArgumentType.getString(ctx, "name")
-                                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                CommandHelper.dispatchAsync(
-                                    context,
-                                    sender,
-                                    asyncWork = { moderationService.saveInventorySnapshot(target, snapName) },
-                                    onResult = {
-                                        context.locale.send(
-                                            sender,
-                                            "moderation.inv-saved",
-                                            "name" to snapName,
-                                            "target" to target.name
-                                        )
-                                    },
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
+            .then(Commands.argument("name", StringArgumentType.word()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val snapName = StringArgumentType.getString(ctx, "name")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        player,
+                        asyncWork = { moderationService.saveInventorySnapshot(player, snapName) },
+                        onResult = {
+                            context.locale.send(
+                                player, "moderation.inv-saved", "name" to snapName, "target" to player.name
+                            )
+                        },
                     )
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
+                            val sender = ctx.source.sender
+                            val snapName = StringArgumentType.getString(ctx, "name")
+                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                            CommandHelper.dispatchAsync(
+                                context,
+                                sender,
+                                asyncWork = { moderationService.saveInventorySnapshot(target, snapName) },
+                                onResult = {
+                                    context.locale.send(
+                                        sender, "moderation.inv-saved", "name" to snapName, "target" to target.name
+                                    )
+                                },
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, invSaveNode, "Save player inventory snapshot", emptyList())
 
         val invLoadNode = Commands.literal("invload")
             .requires { it.sender.hasPermission("obsidian.command.invload") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val snapName = StringArgumentType.getString(ctx, "name")
-                        CommandHelper.dispatchAsync(
-                            context,
-                            player,
-                            asyncWork = { moderationService.loadInventorySnapshot(player, snapName) },
-                            onResult = { ok ->
-                                if (ok) context.locale.send(
-                                    player,
-                                    "moderation.inv-loaded",
-                                    "name" to snapName,
-                                    "target" to player.name
-                                )
-                                else context.locale.send(player, "moderation.inv-not-found", "name" to snapName)
-                            },
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.argument("target", ArgumentTypes.player())
-                            .executes { ctx ->
-                                val sender = ctx.source.sender
-                                val snapName = StringArgumentType.getString(ctx, "name")
-                                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                CommandHelper.dispatchAsync(
-                                    context,
-                                    sender,
-                                    asyncWork = { moderationService.loadInventorySnapshot(target, snapName) },
-                                    onResult = { ok ->
-                                        if (ok) context.locale.send(
-                                            sender,
-                                            "moderation.inv-loaded",
-                                            "name" to snapName,
-                                            "target" to target.name
-                                        )
-                                        else context.locale.send(sender, "moderation.inv-not-found", "name" to snapName)
-                                    },
-                                )
-                                Command.SINGLE_SUCCESS
-                            }
+            .then(Commands.argument("name", StringArgumentType.word()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val snapName = StringArgumentType.getString(ctx, "name")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        player,
+                        asyncWork = { moderationService.loadInventorySnapshot(player, snapName) },
+                        onResult = { ok ->
+                            if (ok) context.locale.send(
+                                player, "moderation.inv-loaded", "name" to snapName, "target" to player.name
+                            )
+                            else context.locale.send(player, "moderation.inv-not-found", "name" to snapName)
+                        },
                     )
-            )
-            .build()
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
+                            val sender = ctx.source.sender
+                            val snapName = StringArgumentType.getString(ctx, "name")
+                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                            CommandHelper.dispatchAsync(
+                                context,
+                                sender,
+                                asyncWork = { moderationService.loadInventorySnapshot(target, snapName) },
+                                onResult = { ok ->
+                                    if (ok) context.locale.send(
+                                        sender, "moderation.inv-loaded", "name" to snapName, "target" to target.name
+                                    )
+                                    else context.locale.send(sender, "moderation.inv-not-found", "name" to snapName)
+                                },
+                            )
+                            Command.SINGLE_SUCCESS
+                        })).build()
         registrar.register(context.plugin.pluginMeta, invLoadNode, "Restore saved inventory snapshot", emptyList())
     }
 
     private fun registerInfoCommands(registrar: Commands) {
         val seenNode = Commands.literal("seen")
             .requires { it.sender.hasPermission("obsidian.command.seen") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val query = StringArgumentType.getString(ctx, "target")
-                        val online = Bukkit.getPlayerExact(query) ?: Bukkit.getPlayer(query)
-                        if (online != null) {
-                            val profile = context.users.getCached(online)
-                            val elapsed = System.currentTimeMillis() - profile.lastLogin
-                            context.locale.send(
-                                sender,
-                                "moderation.seen-online",
-                                "target" to online.name,
-                                "time" to TextFormatter.formatDuration(elapsed)
-                            )
-                            return@executes Command.SINGLE_SUCCESS
-                        }
-                        CommandHelper.dispatchAsync(
-                            context,
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val query = StringArgumentType.getString(ctx, "target")
+                    val online = Bukkit.getPlayerExact(query) ?: Bukkit.getPlayer(query)
+                    if (online != null) {
+                        val profile = context.users.getCached(online)
+                        val elapsed = System.currentTimeMillis() - profile.lastLogin
+                        context.locale.send(
                             sender,
-                            asyncWork = { context.users.findByName(query) },
-                            onResult = { user ->
-                                if (user == null) {
-                                    context.locale.send(sender, "general.player-not-found", "player" to query)
-                                } else {
-                                    val refTime = if (user.lastLogout > 0L) user.lastLogout else user.lastLogin
-                                    val elapsed = (System.currentTimeMillis() - refTime).coerceAtLeast(0L)
-                                    context.locale.send(
-                                        sender,
-                                        "moderation.seen-offline",
-                                        "target" to user.username,
-                                        "time" to TextFormatter.formatDuration(elapsed)
-                                    )
-                                }
-                            },
+                            "moderation.seen-online",
+                            "target" to online.name,
+                            "time" to TextFormatter.formatDuration(elapsed)
                         )
-                        Command.SINGLE_SUCCESS
+                        return@executes Command.SINGLE_SUCCESS
                     }
-            )
-            .build()
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = { context.users.findByName(query) },
+                        onResult = { user ->
+                            if (user == null) {
+                                context.locale.send(sender, "general.player-not-found", "player" to query)
+                            } else {
+                                val refTime = if (user.lastLogout > 0L) user.lastLogout else user.lastLogin
+                                val elapsed = (System.currentTimeMillis() - refTime).coerceAtLeast(0L)
+                                context.locale.send(
+                                    sender,
+                                    "moderation.seen-offline",
+                                    "target" to user.username,
+                                    "time" to TextFormatter.formatDuration(elapsed)
+                                )
+                            }
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, seenNode, "Check when a player was last online", emptyList())
 
         val infoNode = Commands.literal("info")
             .requires { it.sender.hasPermission("obsidian.command.info") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val query = StringArgumentType.getString(ctx, "target")
-                        CommandHelper.dispatchAsync(
-                            context,
-                            sender,
-                            asyncWork = {
-                                val id = moderationService.resolveTarget(query)
-                                val profile = id?.uuid?.let { context.users.getOrLoad(it, id.name) }
-                                if (profile == null) {
-                                    null
-                                } else {
-                                    val warnings = moderationService.getActiveWarnings(profile.uuid).size
-                                    val mute = moderationService.getActiveMute(profile.uuid)
-                                    val jail = moderationService.getActiveJail(profile.uuid)
-                                    moderationService.formatInfoLines(
-                                        profile,
-                                        id.onlinePlayer,
-                                        id.ip,
-                                        warnings,
-                                        mute,
-                                        jail
-                                    )
-                                }
-                            },
-                            onResult = { lines ->
-                                if (lines == null) {
-                                    context.locale.send(sender, "general.player-not-found", "player" to query)
-                                } else {
-                                    lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
-                                }
-                            },
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val query = StringArgumentType.getString(ctx, "target")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = {
+                            val id = moderationService.resolveTarget(query)
+                            val profile = id?.uuid?.let { context.users.getOrLoad(it, id.name) }
+                            if (profile == null) {
+                                null
+                            } else {
+                                val warnings = moderationService.getActiveWarnings(profile.uuid).size
+                                val mute = moderationService.getActiveMute(profile.uuid)
+                                val jail = moderationService.getActiveJail(profile.uuid)
+                                moderationService.formatInfoLines(
+                                    profile, id.onlinePlayer, id.ip, warnings, mute, jail
+                                )
+                            }
+                        },
+                        onResult = { lines ->
+                            if (lines == null) {
+                                context.locale.send(sender, "general.player-not-found", "player" to query)
+                            } else {
+                                lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
+                            }
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, infoNode, "View detailed player summary", emptyList())
 
         val sameIpNode = Commands.literal("sameip")
             .requires { it.sender.hasPermission("obsidian.command.sameip") || it.sender.hasPermission("obsidian.admin") }
-            .then(
-                Commands.argument("target", StringArgumentType.word())
-                    .suggests { ctx, b ->
-                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
-                        b.buildFuture()
-                    }
-                    .executes { ctx ->
-                        val sender = ctx.source.sender
-                        val query = StringArgumentType.getString(ctx, "target")
-                        CommandHelper.dispatchAsync(
-                            context,
-                            sender,
-                            asyncWork = {
-                                val id = moderationService.resolveTarget(query)
-                                val ip = id?.ip ?: if (ModerationService.isIpAddress(query)) query else null
-                                ip to ip?.let { context.punishmentRepository.findAccountsByIp(it) }.orEmpty()
-                            },
-                            onResult = { (ip, matches) ->
-                                if (matches.isEmpty()) {
-                                    context.locale.send(sender, "moderation.sameip-none", "target" to query)
-                                    return@dispatchAsync
-                                }
-                                context.locale.send(sender, "moderation.sameip-header", "target" to "$query ($ip)")
-                                matches.forEach { rec ->
-                                    sender.sendMessage(TextFormatter.format("<gray>-</gray> <white>${rec.username}</white> <dark_gray>(${rec.uuid})</dark_gray>"))
-                                }
-                            },
-                        )
-                        Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val query = StringArgumentType.getString(ctx, "target")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = {
+                            val id = moderationService.resolveTarget(query)
+                            val ip = id?.ip ?: if (ModerationService.isIpAddress(query)) query else null
+                            ip to ip?.let { context.punishmentRepository.findAccountsByIp(it) }.orEmpty()
+                        },
+                        onResult = { (ip, matches) ->
+                            if (matches.isEmpty()) {
+                                context.locale.send(sender, "moderation.sameip-none", "target" to query)
+                                return@dispatchAsync
+                            }
+                            context.locale.send(sender, "moderation.sameip-header", "target" to "$query ($ip)")
+                            matches.forEach { rec ->
+                                sender.sendMessage(TextFormatter.format("<gray>-</gray> <white>${rec.username}</white> <dark_gray>(${rec.uuid})</dark_gray>"))
+                            }
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta,
             sameIpNode,

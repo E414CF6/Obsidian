@@ -50,15 +50,13 @@ class PlaceholderService(private val context: ObsidianContext) {
             "balance_formatted" -> if (uuid != null && eco != null) eco.formatMoney(eco.getBalance(uuid)) else "0"
             "playtime" -> if (uuid != null && ranks != null) TextFormatter.formatDuration(
                 ranks.getOrLoadSnapshot(
-                    uuid,
-                    player.name
+                    uuid, player.name
                 ).totalMillis
             ) else "0s"
 
             "playtime_daily" -> if (uuid != null && ranks != null) TextFormatter.formatDuration(
                 ranks.getOrLoadSnapshot(
-                    uuid,
-                    player.name
+                    uuid, player.name
                 ).dailyMillis
             ) else "0s"
 
@@ -85,20 +83,17 @@ class PlaceholderService(private val context: ObsidianContext) {
         val lp = context.getService<LuckPermsHook>()
         val prefix = if (player != null && lp != null) lp.getPrefix(player) else ""
         val suffix = if (player != null && lp != null) lp.getSuffix(player) else ""
-        var resolved = template
-            .replace("{online}", resolveKey(player, "online") ?: "0")
+        var resolved = template.replace("{online}", resolveKey(player, "online") ?: "0")
             .replace("{max_players}", resolveKey(player, "max_players") ?: "0")
             .replace("{player}", resolveKey(player, "player") ?: "")
             .replace("{displayname}", resolveKey(player, "displayname") ?: "")
-            .replace("{nick}", resolveKey(player, "nick") ?: "")
-            .replace("{ping}", resolveKey(player, "ping") ?: "0")
+            .replace("{nick}", resolveKey(player, "nick") ?: "").replace("{ping}", resolveKey(player, "ping") ?: "0")
             .replace("{world}", resolveKey(player, "world") ?: "")
             .replace("{balance}", resolveKey(player, "balance_formatted") ?: "0")
             .replace("{playtime}", resolveKey(player, "playtime") ?: "0s")
             .replace("{rank}", resolveKey(player, "rank") ?: "default")
             .replace("{homes}", resolveKey(player, "homes") ?: "0")
-            .replace("{afk}", resolveKey(player, "afk") ?: "false")
-            .replace("{prefix}", prefix)
+            .replace("{afk}", resolveKey(player, "afk") ?: "false").replace("{prefix}", prefix)
             .replace("{suffix}", suffix)
 
         if (player != null && isPapiEnabled()) {

@@ -20,10 +20,8 @@ class ArmorStandService(private val context: ObsidianContext) {
             it is ArmorStand && it.uniqueId != player.uniqueId
         }?.hitEntity as? ArmorStand
         if (hit != null) return hit
-        return player.getNearbyEntities(maxDistance, maxDistance, maxDistance)
-            .asSequence()
-            .filterIsInstance<ArmorStand>()
-            .minByOrNull { it.location.distanceSquared(player.location) }
+        return player.getNearbyEntities(maxDistance, maxDistance, maxDistance).asSequence()
+            .filterIsInstance<ArmorStand>().minByOrNull { it.location.distanceSquared(player.location) }
     }
 
     fun applyFlag(stand: ArmorStand, flag: String, explicitState: Boolean? = null): Pair<String, Boolean>? {
@@ -89,9 +87,7 @@ class ArmorStandService(private val context: ObsidianContext) {
         menu.set(
             21,
             MenuItems.item(
-                Material.COMPASS,
-                "<gold>Rotate +45°</gold>",
-                listOf("<yellow>Click to rotate ArmorStand</yellow>")
+                Material.COMPASS, "<gold>Rotate +45°</gold>", listOf("<yellow>Click to rotate ArmorStand</yellow>")
             ),
         ) { click ->
             if (!stand.isValid) {

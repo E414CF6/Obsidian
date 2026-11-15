@@ -155,27 +155,19 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
                     .executes { ctx ->
                         sendStatus(ctx.source.sender)
                         Command.SINGLE_SUCCESS
-                    }
-                    .then(
-                        Commands.literal("status")
-                            .executes { ctx ->
+                    }.then(
+                        Commands.literal("status").executes { ctx ->
                                 sendStatus(ctx.source.sender)
                                 Command.SINGLE_SUCCESS
-                            }
-                    )
-                    .then(
-                        Commands.literal("reload")
-                            .executes { ctx ->
+                            }).then(
+                        Commands.literal("reload").executes { ctx ->
                                 val running = reloadSettings()
                                 val state =
                                     if (running) "${httpServer.host}:${httpServer.boundPort}" else "disabled/stopped"
                                 context.locale.send(ctx.source.sender, "stats.reloaded", "state" to state)
                                 Command.SINGLE_SUCCESS
-                            }
-                    )
-                    .then(
-                        Commands.literal("genkey")
-                            .executes { ctx ->
+                            }).then(
+                        Commands.literal("genkey").executes { ctx ->
                                 rsaAuth.generateKeys()
                                 context.locale.send(
                                     ctx.source.sender,
@@ -183,11 +175,8 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
                                     "path" to rsaAuth.publicKeyFile.toString(),
                                 )
                                 Command.SINGLE_SUCCESS
-                            }
-                    )
-                    .then(
-                        Commands.literal("refresh")
-                            .executes { ctx ->
+                            }).then(
+                        Commands.literal("refresh").executes { ctx ->
                                 val sender = ctx.source.sender
                                 context.scheduler.asyncScope.launch {
                                     val snapshot = aggregator.getSnapshot(forceRefresh = true)
@@ -201,8 +190,7 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
                                     }
                                 }
                                 Command.SINGLE_SUCCESS
-                            }
-                    )
+                            })
             },
         )
     }

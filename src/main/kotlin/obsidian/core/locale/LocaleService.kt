@@ -33,9 +33,7 @@ class LocaleService(
     }
 
     fun raw(key: String): String {
-        return primary?.yaml?.getString(key)
-            ?: fallback.yaml.getString(key)
-            ?: key
+        return primary?.yaml?.getString(key) ?: fallback.yaml.getString(key) ?: key
     }
 
     fun prefix(): Component = TextFormatter.format(raw("prefix"))

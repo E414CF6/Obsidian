@@ -103,9 +103,9 @@ class KitService(private val context: ObsidianContext) : Listener {
 
     fun canAccess(player: Player, kit: KitDefinition): Boolean {
         if (!kit.permissionRequired) return true
-        return player.hasPermission("obsidian.kit.${kit.name.lowercase()}") ||
-                player.hasPermission("obsidian.kit.*") ||
-                player.hasPermission("obsidian.admin")
+        return player.hasPermission("obsidian.kit.${kit.name.lowercase()}") || player.hasPermission("obsidian.kit.*") || player.hasPermission(
+            "obsidian.admin"
+        )
     }
 
     fun createFromPlayerInventory(name: String, player: Player): KitDefinition {
@@ -222,11 +222,10 @@ class KitService(private val context: ObsidianContext) : Listener {
         val eco = context.getService<EconomyService>()
 
         for (kit in slice) {
-            val slot = kit.slot?.takeIf { it in 0 until 45 && kit.page == currentPage }
-                ?: run {
-                    while (window.hasButton(fallbackSlot) && fallbackSlot < 45) fallbackSlot++
-                    fallbackSlot++
-                }
+            val slot = kit.slot?.takeIf { it in 0 until 45 && kit.page == currentPage } ?: run {
+                while (window.hasButton(fallbackSlot) && fallbackSlot < 45) fallbackSlot++
+                fallbackSlot++
+            }
             if (slot >= 45) continue
 
             val claim = playerClaims[kit.name.lowercase()]

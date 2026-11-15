@@ -62,47 +62,34 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
         val serverNode = Commands.literal("server")
             .requires { it.sender.hasPermission("obsidian.command.server") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("name", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("name", StringArgumentType.word()).executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val server = StringArgumentType.getString(ctx, "name")
                         sendToServer(player, server)
                         context.locale.send(player, "proxy.connecting", "server" to server)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(
-            context.plugin.pluginMeta,
-            serverNode,
-            "Connect to another proxy backend server",
-            emptyList()
+            context.plugin.pluginMeta, serverNode, "Connect to another proxy backend server", emptyList()
         )
 
         val sendAllNode = Commands.literal("sendall")
             .requires { it.sender.hasPermission("obsidian.command.sendall") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("server", StringArgumentType.word())
-                    .executes { ctx ->
+                Commands.argument("server", StringArgumentType.word()).executes { ctx ->
                         val server = StringArgumentType.getString(ctx, "server")
                         val count = sendAllToServer(server)
                         context.locale.send(ctx.source.sender, "proxy.sent-all", "count" to count, "server" to server)
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(
-            context.plugin.pluginMeta,
-            sendAllNode,
-            "Send all online players to another server",
-            emptyList()
+            context.plugin.pluginMeta, sendAllNode, "Send all online players to another server", emptyList()
         )
 
         val bcNode = Commands.literal("bbroadcast")
             .requires { it.sender.hasPermission("obsidian.command.bbroadcast") || it.sender.hasPermission("obsidian.admin") }
             .then(
-                Commands.argument("message", StringArgumentType.greedyString())
-                    .executes { ctx ->
+                Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
                         val msg = StringArgumentType.getString(ctx, "message")
                         if (broadcastAcrossProxy(msg)) {
                             context.locale.send(ctx.source.sender, "proxy.broadcast-sent")
@@ -111,9 +98,7 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
                             Bukkit.broadcast(TextFormatter.format(msg))
                         }
                         Command.SINGLE_SUCCESS
-                    }
-            )
-            .build()
+                    }).build()
         registrar.register(context.plugin.pluginMeta, bcNode, "Broadcast a message across proxy servers", emptyList())
     }
 
@@ -125,8 +110,7 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
         fun encodeConnectOther(playerName: String, targetServer: String): ByteArray =
             encodeStrings("ConnectOther", playerName, targetServer)
 
-        fun encodeMessage(recipient: String, text: String): ByteArray =
-            encodeStrings("Message", recipient, text)
+        fun encodeMessage(recipient: String, text: String): ByteArray = encodeStrings("Message", recipient, text)
 
         private fun encodeStrings(vararg parts: String): ByteArray {
             val bytes = ByteArrayOutputStream()
