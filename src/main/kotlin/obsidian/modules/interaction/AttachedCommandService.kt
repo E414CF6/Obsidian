@@ -90,7 +90,7 @@ class AttachedCommandService(private val context: ObsidianContext) : Listener {
             val last = lastUseByPlayer[player.uniqueId] ?: 0L
             if (now - last < cdMs) {
                 val remain = ((cdMs - (now - last)) / 1000L).coerceAtLeast(1L)
-                context.locale.send(player, "commands.cooldown", "seconds" to remain)
+                context.locale.send(player, "interaction.attached-cooldown-active", "seconds" to remain)
                 return
             }
             lastUseByPlayer[player.uniqueId] = now

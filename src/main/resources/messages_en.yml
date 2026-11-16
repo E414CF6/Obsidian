@@ -231,6 +231,7 @@ interaction:
   attached-empty: "<yellow>This item has no attached commands.</yellow>"
   attached-cleared: "<yellow>Cleared all attached commands from this item.</yellow>"
   attached-cooldown: "<green>Item attached-command cooldown set to <white>{seconds}s</white>.</green>"
+  attached-cooldown-active: "<red>Please wait <white>{seconds}s</white> before using this item again.</red>"
   attached-uses: "<green>Item attached-command remaining uses set to <white>{uses}</white>.</green>"
 
 automation:

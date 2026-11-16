@@ -231,6 +231,7 @@ interaction:
   attached-empty: "<yellow>이 아이템에는 부착된 명령이 없습니다.</yellow>"
   attached-cleared: "<yellow>아이템에 부착된 명령을 모두 초기화했습니다.</yellow>"
   attached-cooldown: "<green>아이템 명령 재사용 대기시간을 <white>{seconds}초</white>로 설정했습니다.</green>"
+  attached-cooldown-active: "<red>이 아이템을 다시 사용하려면 <white>{seconds}초</white> 기다려야 합니다.</red>"
   attached-uses: "<green>아이템 명령 남은 사용 횟수를 <white>{uses}회</white>로 설정했습니다.</green>"
 
 automation:
