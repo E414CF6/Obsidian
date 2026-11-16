@@ -231,6 +231,9 @@ protect:
 
 stats:
   cache-ttl-seconds: 15
+  biomes-target: 54
+  dashboard:
+    server-name: ""
   http:
     enabled: true
     host: "0.0.0.0"

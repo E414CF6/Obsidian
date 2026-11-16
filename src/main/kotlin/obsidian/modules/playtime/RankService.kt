@@ -24,6 +24,8 @@ data class RankDefinition(
     val requiredPlaytimeSeconds: Long,
     val cost: Double,
     val commands: List<String>,
+    val color: String? = null,
+    val lightColor: String? = null,
 )
 
 data class PlayTimeReward(
@@ -71,6 +73,8 @@ class RankService(private val context: ObsidianContext) : Listener {
                     requiredPlaytimeSeconds = node.getLong("required-playtime-seconds", 0L).coerceAtLeast(0L),
                     cost = node.getDouble("cost", 0.0).coerceAtLeast(0.0),
                     commands = node.getStringList("commands"),
+                    color = node.getString("color")?.takeIf { it.isNotBlank() },
+                    lightColor = node.getString("light-color")?.takeIf { it.isNotBlank() },
                 )
             }
         }
@@ -90,6 +94,8 @@ class RankService(private val context: ObsidianContext) : Listener {
     }
 
     fun getRank(rankId: String): RankDefinition? = ranks[rankId.lowercase()]
+
+    fun getAllRanks(): List<RankDefinition> = ranks.values.toList()
 
     fun getOrLoadSnapshot(uuid: UUID, nameHint: String? = null): PlayTimeRecord {
         sessions[uuid]?.let { state ->

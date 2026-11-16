@@ -55,6 +55,7 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
             rankService = rankService,
             luckPermsHook = luckPerms,
             logger = context.plugin.logger,
+            metaProvider = { buildServerMeta(rankService) },
         )
         aggregator.ensureSchema()
 
@@ -132,6 +133,7 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
         rsaAuth.configure(resolvedKeys, skew)
 
         aggregator.cacheTtlSeconds = raw.getLong("stats.cache-ttl-seconds", 15L)
+        aggregator.totalBiomesTarget = raw.getInt("stats.biomes-target", 54)
 
         httpEnabled = raw.getBoolean("stats.http.enabled", true)
         httpServer.host = raw.getString("stats.http.host", "0.0.0.0") ?: "0.0.0.0"
@@ -157,40 +159,40 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
                         Command.SINGLE_SUCCESS
                     }.then(
                         Commands.literal("status").executes { ctx ->
-                                sendStatus(ctx.source.sender)
-                                Command.SINGLE_SUCCESS
-                            }).then(
+                            sendStatus(ctx.source.sender)
+                            Command.SINGLE_SUCCESS
+                        }).then(
                         Commands.literal("reload").executes { ctx ->
-                                val running = reloadSettings()
-                                val state =
-                                    if (running) "${httpServer.host}:${httpServer.boundPort}" else "disabled/stopped"
-                                context.locale.send(ctx.source.sender, "stats.reloaded", "state" to state)
-                                Command.SINGLE_SUCCESS
-                            }).then(
+                            val running = reloadSettings()
+                            val state =
+                                if (running) "${httpServer.host}:${httpServer.boundPort}" else "disabled/stopped"
+                            context.locale.send(ctx.source.sender, "stats.reloaded", "state" to state)
+                            Command.SINGLE_SUCCESS
+                        }).then(
                         Commands.literal("genkey").executes { ctx ->
-                                rsaAuth.generateKeys()
-                                context.locale.send(
-                                    ctx.source.sender,
-                                    "stats.genkey-done",
-                                    "path" to rsaAuth.publicKeyFile.toString(),
-                                )
-                                Command.SINGLE_SUCCESS
-                            }).then(
+                            rsaAuth.generateKeys()
+                            context.locale.send(
+                                ctx.source.sender,
+                                "stats.genkey-done",
+                                "path" to rsaAuth.publicKeyFile.toString(),
+                            )
+                            Command.SINGLE_SUCCESS
+                        }).then(
                         Commands.literal("refresh").executes { ctx ->
-                                val sender = ctx.source.sender
-                                context.scheduler.asyncScope.launch {
-                                    val snapshot = aggregator.getSnapshot(forceRefresh = true)
-                                    context.scheduler.runGlobal {
-                                        context.locale.send(
-                                            sender,
-                                            "stats.refreshed",
-                                            "players" to snapshot.overview.totalPlayers,
-                                            "online" to snapshot.overview.onlinePlayers,
-                                        )
-                                    }
+                            val sender = ctx.source.sender
+                            context.scheduler.asyncScope.launch {
+                                val snapshot = aggregator.getSnapshot(forceRefresh = true)
+                                context.scheduler.runGlobal {
+                                    context.locale.send(
+                                        sender,
+                                        "stats.refreshed",
+                                        "players" to snapshot.overview.totalPlayers,
+                                        "online" to snapshot.overview.onlinePlayers,
+                                    )
                                 }
-                                Command.SINGLE_SUCCESS
-                            })
+                            }
+                            Command.SINGLE_SUCCESS
+                        })
             },
         )
     }
@@ -214,6 +216,33 @@ class StatsModule(private val context: ObsidianContext) : ObsidianModule, Listen
             "auth" to authMode,
             "players" to playersCount,
             "ttl" to aggregator.cacheTtlSeconds,
+        )
+    }
+
+    private fun buildServerMeta(rankService: RankService?): ServerMeta {
+        val raw = context.config.raw
+        val configuredName = raw.getString("stats.dashboard.server-name", "")?.trim().orEmpty()
+        val serverName = configuredName.ifEmpty {
+            runCatching { Bukkit.getServer().name }.getOrNull()?.takeIf { it.isNotBlank() && it != "Paper" }
+                ?: "Obsidian"
+        }
+        val currency = CurrencyMeta(
+            symbol = raw.getString("economy.currency-symbol", "$") ?: "$",
+            name = raw.getString("economy.currency-name", "Dollar") ?: "Dollar",
+            namePlural = raw.getString("economy.currency-name-plural", "Dollars") ?: "Dollars",
+            formatPattern = raw.getString("economy.format-pattern", "#,##0.##") ?: "#,##0.##",
+        )
+        val hasMcmmo = runCatching { Bukkit.getPluginManager().isPluginEnabled("mcMMO") }.getOrDefault(false)
+        return ServerMeta(
+            serverName = serverName,
+            currency = currency,
+            ranks = StatsAggregatorService.buildRankTiers(rankService),
+            capabilities = CapabilitiesMeta(
+                mcmmo = hasMcmmo,
+                claims = false,
+                economy = context.config.isModuleEnabled("economy", true),
+                playtime = context.config.isModuleEnabled("playtime", true),
+            ),
         )
     }
 

@@ -50,12 +50,19 @@ class StatsAggregatorService(
         collectExternalMcmmoSkills(uuid, isOnline)
     },
     private val claimsProvider: (UUID) -> PlayerClaims = { uuid -> collectExternalClaims(uuid) },
+    private val metaProvider: () -> ServerMeta = { buildDefaultMeta(rankService) },
 ) {
 
     @Volatile
     var cacheTtlSeconds: Long = 15L
         set(value) {
             field = value.coerceAtLeast(1L)
+        }
+
+    @Volatile
+    var totalBiomesTarget: Int = 54
+        set(value) {
+            field = value.coerceAtLeast(1)
         }
 
     @Volatile
@@ -172,7 +179,7 @@ class StatsAggregatorService(
                 ?.contains(q) == true) || (p.displayName?.lowercase()?.contains(q) == true) || p.uuid.lowercase()
                 .contains(q) || p.rank.lowercase().contains(q) || p.primaryGroup.lowercase().contains(q)
         }
-        return StatsApiResponse(snapshot.overview, filtered)
+        return StatsApiResponse(snapshot.overview, filtered, snapshot.meta)
     }
 
     fun findPlayer(idOrName: String, forceRefresh: Boolean = false): PlayerSummary? {
@@ -287,7 +294,7 @@ class StatsAggregatorService(
             val specialty = WorldDataReader.computeSpecialty(skills)
             val claims = claimsProvider(uuid)
             val vanillaStats = WorldDataReader.readVanillaStats(worldDir, uuidStr)
-            val advancements = WorldDataReader.readAdvancements(worldDir, uuidStr)
+            val advancements = WorldDataReader.readAdvancements(worldDir, uuidStr, totalBiomesTarget)
 
             totalBalance += balance
             totalPlayTimeMs += totalPt
@@ -306,6 +313,7 @@ class StatsAggregatorService(
                 displayName = cleanDisplay ?: cleanNick ?: username,
                 primaryGroup = primaryGroup,
                 rank = cleanRank,
+                rankId = rawRank.ifBlank { "default" },
                 balance = balance,
                 totalPlayTimeMs = totalPt,
                 lastLoginTime = lastLogin,
@@ -342,7 +350,7 @@ class StatsAggregatorService(
             sourceMode = sourceMode,
         )
 
-        return StatsApiResponse(overview, summaries)
+        return StatsApiResponse(overview, summaries, metaProvider())
     }
 
     private fun buildPlayerHistory(
@@ -506,6 +514,44 @@ class StatsAggregatorService(
     }
 
     companion object {
+        private val DEFAULT_RANK_COLORS = listOf(
+            "#9ca3af" to "#4b5563",
+            "#4ade80" to "#15803d",
+            "#38bdf8" to "#0369a1",
+            "#fbbf24" to "#b45309",
+            "#c084fc" to "#7e22ce",
+            "#f87171" to "#b91c1c",
+        )
+
+        fun buildRankTiers(rankService: RankService?): List<RankTierMeta> {
+            val defs = rankService?.getAllRanks().orEmpty()
+            return defs.mapIndexed { idx, def ->
+                val (fallbackDark, fallbackLight) = DEFAULT_RANK_COLORS[idx % DEFAULT_RANK_COLORS.size]
+                val label = WorldDataReader.stripMinecraftCodes(def.displayName).ifBlank { def.id }
+                RankTierMeta(
+                    id = def.id,
+                    label = label,
+                    nextRank = def.nextRank,
+                    requiredPlaytimeSeconds = def.requiredPlaytimeSeconds,
+                    cost = def.cost,
+                    color = def.color ?: fallbackDark,
+                    lightColor = def.lightColor ?: fallbackLight,
+                )
+            }
+        }
+
+        fun buildDefaultMeta(rankService: RankService? = null): ServerMeta = ServerMeta(
+            serverName = "Obsidian",
+            currency = CurrencyMeta(),
+            ranks = buildRankTiers(rankService),
+            capabilities = CapabilitiesMeta(
+                mcmmo = runCatching { Bukkit.getPluginManager().isPluginEnabled("mcMMO") }.getOrDefault(false),
+                claims = false,
+                economy = true,
+                playtime = rankService != null,
+            ),
+        )
+
         fun zeroSkills(): Map<String, PlayerSkillStat> {
             val map = LinkedHashMap<String, PlayerSkillStat>(SkillMeta.ALL.size)
             for (meta in SkillMeta.ALL) {

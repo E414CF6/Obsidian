@@ -11,15 +11,48 @@ object StatsJson {
     val GSON: Gson = GsonBuilder().serializeNulls().create()
 }
 
+data class CurrencyMeta(
+    val symbol: String = "$",
+    val name: String = "Dollar",
+    val namePlural: String = "Dollars",
+    val formatPattern: String = "#,##0.##",
+)
+
+data class RankTierMeta(
+    val id: String,
+    val label: String,
+    val nextRank: String?,
+    val requiredPlaytimeSeconds: Long,
+    val cost: Double,
+    val color: String,
+    val lightColor: String,
+)
+
+data class CapabilitiesMeta(
+    val mcmmo: Boolean = false,
+    val claims: Boolean = false,
+    val economy: Boolean = true,
+    val playtime: Boolean = true,
+)
+
+data class ServerMeta(
+    val serverName: String = "Obsidian",
+    val currency: CurrencyMeta = CurrencyMeta(),
+    val ranks: List<RankTierMeta> = emptyList(),
+    val capabilities: CapabilitiesMeta = CapabilitiesMeta(),
+)
+
 data class StatsApiResponse(
     val overview: ServerOverview,
     val players: List<PlayerSummary>,
+    val meta: ServerMeta = ServerMeta(),
 )
 
 data class PlayerDetailResponse(
     val player: PlayerSummary,
     val queriedAt: String,
     val sourceMode: String,
+    val meta: ServerMeta = ServerMeta(),
 )
 
 data class ServerOverview(
@@ -46,6 +79,7 @@ data class PlayerSummary(
     val displayName: String?,
     val primaryGroup: String,
     val rank: String,
+    val rankId: String = rank,
     val balance: Double,
     val totalPlayTimeMs: Long,
     val lastLoginTime: Long,
@@ -69,6 +103,7 @@ data class PlayerSkillStat(
 )
 
 data class PlayerSpecialty(
+    val key: String,
     val title: String,
     val category: String,
     val topSkillKey: String?,

@@ -76,16 +76,18 @@ class StatsModuleTest {
         assertEquals(48L, vanilla.totalMined)
         assertEquals("stone", vanilla.topMined.first().id)
 
-        val adv = WorldDataReader.readAdvancements(tempDir, uuid)
+        val adv = WorldDataReader.readAdvancements(tempDir, uuid, totalBiomesTarget = 60)
         assertEquals(1L, adv.totalCompleted)
         assertEquals(1, adv.categories["story"])
         assertEquals(1, adv.visitedBiomes.size)
         assertEquals("plains", adv.visitedBiomes.first().id)
+        assertEquals(60, adv.totalBiomesTarget)
 
         val specialty = WorldDataReader.computeSpecialty(
             mapOf("mining" to PlayerSkillStat(120, 40, 100), "swords" to PlayerSkillStat(20, 0, 100))
         )
         assertEquals("gathering", specialty.category)
+        assertEquals("gathering_expert", specialty.key)
         assertEquals("mining", specialty.topSkillKey)
     }
 
@@ -174,7 +176,19 @@ class StatsModuleTest {
                 )
             },
             skillsProvider = { _, _, _ -> StatsAggregatorService.zeroSkills() },
+            metaProvider = {
+                ServerMeta(
+                    serverName = "Obsidian Test",
+                    currency = CurrencyMeta(symbol = "₩", name = "Won", namePlural = "Won"),
+                    ranks = listOf(
+                        RankTierMeta("default", "Visitor", "member", 0L, 0.0, "#9ca3af", "#4b5563"),
+                        RankTierMeta("member", "Member", null, 3600L, 500.0, "#4ade80", "#15803d"),
+                    ),
+                    capabilities = CapabilitiesMeta(mcmmo = false, claims = false, economy = true, playtime = true),
+                )
+            },
         ).apply {
+            totalBiomesTarget = 58
             ensureSchema()
         }
 
@@ -227,11 +241,17 @@ class StatsModuleTest {
             assertEquals("별빛", alice.nickname)
             assertEquals("vip", alice.primaryGroup)
             assertEquals("Iron", alice.rank)
+            assertEquals("Iron", alice.rankId)
             assertTrue(alice.isOnline)
             assertEquals(3_700_000L, alice.totalPlayTimeMs)
             assertEquals(10L, alice.vanillaStats.totalMined)
+            assertEquals(58, alice.advancements.totalBiomesTarget)
+            assertEquals("Obsidian Test", parsed.meta.serverName)
+            assertEquals("₩", parsed.meta.currency.symbol)
+            assertEquals(2, parsed.meta.ranks.size)
+            assertFalse(parsed.meta.capabilities.mcmmo)
 
-            // signed /api/players/{id} returns single player detail
+            // signed /api/players/{id} returns single player detail with meta
             val detailPath = "/api/players/$playerUuid"
             val detailSig = RsaAuthService.signPayload(privateKey, "GET", detailPath, ts)
             val detailRes = client.send(
@@ -246,6 +266,7 @@ class StatsModuleTest {
             val detail = StatsJson.GSON.fromJson(detailRes.body(), PlayerDetailResponse::class.java)
             assertNotNull(detail.player)
             assertEquals(playerUuid.toString(), detail.player.uuid)
+            assertEquals("Obsidian Test", detail.meta.serverName)
         } finally {
             http.stop()
             db.close()

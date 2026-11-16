@@ -111,6 +111,7 @@ class StatsHttpServer(
                                 player = player,
                                 queriedAt = snapshot.overview.queriedAt,
                                 sourceMode = snapshot.overview.sourceMode,
+                                meta = snapshot.meta,
                             ),
                         )
                     }

@@ -24,7 +24,7 @@ object WorldDataReader {
         "minecraft:nether/explore_nether",
     )
 
-    private const val TOTAL_BIOMES_TARGET = 54
+    private const val DEFAULT_BIOMES_TARGET = 54
     private const val DAMAGE_SCALE = 10.0
 
     fun stripMinecraftCodes(raw: String?): String {
@@ -89,9 +89,17 @@ object WorldDataReader {
         }.getOrDefault(PlayerVanillaStats.EMPTY)
     }
 
-    fun readAdvancements(worldDir: Path?, uuid: String): PlayerAdvancementStats {
-        if (worldDir == null || uuid.isBlank()) return PlayerAdvancementStats.EMPTY
-        val file = resolveUuidFile(worldDir, "advancements", uuid) ?: return PlayerAdvancementStats.EMPTY
+    fun readAdvancements(
+        worldDir: Path?,
+        uuid: String,
+        totalBiomesTarget: Int = DEFAULT_BIOMES_TARGET,
+    ): PlayerAdvancementStats {
+        val resolvedBiomesTarget = totalBiomesTarget.coerceAtLeast(1)
+        if (worldDir == null || uuid.isBlank()) {
+            return PlayerAdvancementStats.EMPTY.copy(totalBiomesTarget = resolvedBiomesTarget)
+        }
+        val file = resolveUuidFile(worldDir, "advancements", uuid)
+            ?: return PlayerAdvancementStats.EMPTY.copy(totalBiomesTarget = resolvedBiomesTarget)
         return runCatching {
             val root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).asJsonObject
 
@@ -153,9 +161,9 @@ object WorldDataReader {
                 categories = categories,
                 recent = if (recent.size > 15) recent.subList(0, 15).toList() else recent,
                 visitedBiomes = visitedBiomes,
-                totalBiomesTarget = TOTAL_BIOMES_TARGET,
+                totalBiomesTarget = resolvedBiomesTarget,
             )
-        }.getOrDefault(PlayerAdvancementStats.EMPTY)
+        }.getOrDefault(PlayerAdvancementStats.EMPTY.copy(totalBiomesTarget = resolvedBiomesTarget))
     }
 
     fun computeSpecialty(skills: Map<String, PlayerSkillStat>): PlayerSpecialty {
@@ -182,7 +190,7 @@ object WorldDataReader {
 
         val total = gathering + combat + misc
         if (total == 0) {
-            return PlayerSpecialty("신입 모험가", "balanced", null, 0, 0, 0)
+            return PlayerSpecialty("newcomer", "신입 모험가", "balanced", null, 0, 0, 0)
         }
 
         var domCategory = "balanced"
@@ -196,14 +204,14 @@ object WorldDataReader {
             domCategory = topCategory
         }
 
-        val title = when (domCategory) {
-            "gathering" -> if (gathering > 300) "대지의 마스터" else "자연 채집가"
-            "combat" -> if (combat > 300) "전설의 전사" else "숙련된 전투가"
-            "misc" -> if (misc > 200) "만능 장인" else "기술 전문가"
-            else -> "균형잡힌 모험가"
+        val (key, title) = when (domCategory) {
+            "gathering" -> if (gathering > 300) "gathering_master" to "대지의 마스터" else "gathering_expert" to "자연 채집가"
+            "combat" -> if (combat > 300) "combat_legend" to "전설의 전사" else "combat_skilled" to "숙련된 전투가"
+            "misc" -> if (misc > 200) "misc_artisan" to "만능 장인" else "misc_specialist" to "기술 전문가"
+            else -> "balanced" to "균형잡힌 모험가"
         }
 
-        return PlayerSpecialty(title, domCategory, topKey, gathering, combat, misc)
+        return PlayerSpecialty(key, title, domCategory, topKey, gathering, combat, misc)
     }
 
     private fun resolveUuidFile(worldDir: Path, subDir: String, uuid: String): Path? {
