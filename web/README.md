@@ -52,12 +52,12 @@ Configure these in `web/.env.local` (or your hosting provider's environment sett
 
 | Variable | Required | Description |
 | :--- | :---: | :--- |
-| `REMOTE_API_URL` | Recommended | Base URL of the Obsidian `stats` HTTP API (e.g., `http://127.0.0.1:4000` or your HTTPS tunnel URL) |
+| `REMOTE_API_URL` | Required | Base URL of the Obsidian `stats` HTTP API (e.g., `http://127.0.0.1:4000` or your HTTPS tunnel URL) |
 | `RSA_PRIVATE_KEY_PATH` | Optional | Path to Obsidian's `private_key.pem` (for local/VM deployments) |
 | `RSA_PRIVATE_KEY` | Optional | Inline PEM private key string (recommended for Vercel/cloud deployments) |
 | `API_SECRET_KEY` | Optional | Shared secret sent in `x-api-key` when `stats.auth.api-key` is configured in Obsidian |
 | `REQUIRE_API_KEY` | Optional | Set to `true` to also enforce `x-api-key` on Next.js `/api/*` routes |
-| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME_WC`, `DB_NAME_GL` | Legacy fallback | Only used if `REMOTE_API_URL` is unset and querying an external MariaDB schema directly |
+| `NEXT_PUBLIC_SERVER_NAME` | Optional | Optional fallback title before/outside the API `meta.serverName` payload |
 
 ## Scripts
 

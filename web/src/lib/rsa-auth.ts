@@ -4,6 +4,10 @@ import path from "node:path";
 
 let cachedPrivateKey: string | null = null;
 
+export function clearRsaKeyCache(): void {
+    cachedPrivateKey = null;
+}
+
 function loadPrivateKey(): string | null {
     if (cachedPrivateKey) {
         return cachedPrivateKey;
@@ -12,7 +16,6 @@ function loadPrivateKey(): string | null {
     // 1. Check environment variable containing PEM directly (recommended for Vercel)
     const envKey = process.env.RSA_PRIVATE_KEY?.trim();
     if (envKey) {
-        // If the PEM in env var has literal \n instead of real newlines, convert them
         cachedPrivateKey = envKey.replace(/\\n/g, "\n");
         return cachedPrivateKey;
     }
@@ -50,31 +53,41 @@ function loadPrivateKey(): string | null {
 }
 
 /**
+ * Signs `METHOD\nPATH\nTIMESTAMP` with SHA256withRSA and returns the required auth headers.
+ */
+export function signRsaPayload(
+    privateKeyPem: string,
+    method: string,
+    requestPath: string,
+    timestamp: string = Date.now().toString(),
+): Record<string, string> {
+    const normalizedPath = requestPath.startsWith("/") ? requestPath : `/${requestPath}`;
+    const dataToSign = `${method.toUpperCase()}\n${normalizedPath}\n${timestamp}`;
+    const signer = crypto.createSign("SHA256");
+    signer.update(dataToSign);
+    signer.end();
+    const signature = signer.sign(privateKeyPem, "base64");
+
+    return {
+        "x-api-signature": signature,
+        "x-api-timestamp": timestamp,
+    };
+}
+
+/**
  * Generates the required RSA-SHA256 signature and timestamp headers for remote API calls.
  *
  * @param method HTTP method (e.g. "GET")
- * @param path Request path without query string (e.g. "/api/stats")
+ * @param requestPath Request path without query string (e.g. "/api/stats")
  */
-export function getRsaAuthHeaders(method: string, path: string): Record<string, string> {
+export function getRsaAuthHeaders(method: string, requestPath: string): Record<string, string> {
     const privateKeyPem = loadPrivateKey();
     if (!privateKeyPem) {
         return {};
     }
 
-    const timestamp = Date.now().toString();
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const dataToSign = `${method.toUpperCase()}\n${normalizedPath}\n${timestamp}`;
-
     try {
-        const signer = crypto.createSign("SHA256");
-        signer.update(dataToSign);
-        signer.end();
-        const signature = signer.sign(privateKeyPem, "base64");
-
-        return {
-            "x-api-signature": signature,
-            "x-api-timestamp": timestamp,
-        };
+        return signRsaPayload(privateKeyPem, method, requestPath);
     } catch (err) {
         console.error("[RSA Auth] Failed to generate RSA signature:", err);
         return {};

@@ -1,5 +1,4 @@
 import {NextRequest, NextResponse} from "next/server";
-import {queryStatsFromLocalMariaDB} from "@/lib/db";
 import {StatsApiResponse} from "@/types/stats";
 import {getRsaAuthHeaders} from "@/lib/rsa-auth";
 
@@ -20,60 +19,66 @@ export async function GET(request: NextRequest) {
         const remoteApiUrl = process.env.REMOTE_API_URL?.trim();
         const apiSecretKey = process.env.API_SECRET_KEY?.trim();
 
-        // Optional API key check when REQUIRE_API_KEY is enabled on local tunnel endpoint
         if (process.env.REQUIRE_API_KEY === "true" && apiSecretKey) {
             const providedKey = request.headers.get("x-api-key");
             if (providedKey !== apiSecretKey) {
-                return NextResponse.json({error: "Unauthorized: Invalid x-api-key"}, {
-                    status: 401,
-                    headers: CORS_HEADERS
-                });
+                return NextResponse.json(
+                    {error: "Unauthorized: Invalid x-api-key"},
+                    {status: 401, headers: CORS_HEADERS},
+                );
             }
         }
 
-        let data: StatsApiResponse;
-
-        if (remoteApiUrl) {
-            // Proxy mode for Vercel cloud deployment -> Local server API tunnel
-            const targetUrl = `${remoteApiUrl.replace(/\/$/, "")}/api/stats`;
-            const rsaHeaders = getRsaAuthHeaders("GET", "/api/stats");
-            const res = await fetch(targetUrl, {
-                headers: {
-                    Accept: "application/json",
-                    ...rsaHeaders,
-                    ...(apiSecretKey ? {"x-api-key": apiSecretKey} : {}),
+        if (!remoteApiUrl) {
+            return NextResponse.json(
+                {
+                    error: "REMOTE_API_URL is not configured.",
+                    details: "Set REMOTE_API_URL in .env.local (e.g., http://127.0.0.1:4000) pointing to Obsidian's stats HTTP API.",
                 },
-                cache: "no-store",
-            });
-
-            if (!res.ok) {
-                throw new Error(`Remote API responded with status ${res.status}`);
-            }
-
-            const remoteData = (await res.json()) as StatsApiResponse;
-            data = {
-                ...remoteData, overview: {
-                    ...remoteData.overview, sourceMode: "remote-api-proxy",
-                },
-            };
-        } else {
-            // Direct local MariaDB query mode
-            data = await queryStatsFromLocalMariaDB();
+                {status: 503, headers: CORS_HEADERS},
+            );
         }
 
-        const search = request.nextUrl.searchParams.get("q")?.trim().toLowerCase();
-        if (search) {
-            data = {
-                ...data,
-                players: data.players.filter((p) => p.username.toLowerCase().includes(search) || (p.nickname && p.nickname.toLowerCase().includes(search)) || p.uuid.toLowerCase().includes(search)),
-            };
+        const refresh = request.nextUrl.searchParams.get("refresh") === "true";
+        const search = request.nextUrl.searchParams.get("q")?.trim();
+        const upstreamParams = new URLSearchParams();
+        if (refresh) upstreamParams.set("refresh", "true");
+        if (search) upstreamParams.set("q", search);
+        const queryString = upstreamParams.toString();
+
+        const targetUrl = `${remoteApiUrl.replace(/\/$/, "")}/api/stats${queryString ? `?${queryString}` : ""}`;
+        const rsaHeaders = getRsaAuthHeaders("GET", "/api/stats");
+        const res = await fetch(targetUrl, {
+            headers: {
+                Accept: "application/json",
+                ...rsaHeaders,
+                ...(apiSecretKey ? {"x-api-key": apiSecretKey} : {}),
+            },
+            cache: "no-store",
+        });
+
+        if (!res.ok) {
+            throw new Error(`Remote API responded with status ${res.status}`);
         }
+
+        const remoteData = (await res.json()) as StatsApiResponse;
+        const data: StatsApiResponse = {
+            ...remoteData,
+            overview: {
+                ...remoteData.overview,
+                sourceMode: "remote-api-proxy",
+            },
+        };
 
         return NextResponse.json(data, {headers: CORS_HEADERS});
     } catch (error) {
         console.error("[GET /api/stats] Error:", error);
-        return NextResponse.json({
-            error: "데이터베이스 조회 중 오류가 발생했습니다.", details: error instanceof Error ? error.message : String(error),
-        }, {status: 500, headers: CORS_HEADERS});
+        return NextResponse.json(
+            {
+                error: "통계 데이터를 불러오는 중 오류가 발생했습니다.",
+                details: error instanceof Error ? error.message : String(error),
+            },
+            {status: 500, headers: CORS_HEADERS},
+        );
     }
 }

@@ -1,6 +1,5 @@
 import {NextRequest, NextResponse} from "next/server";
-import {queryStatsFromLocalMariaDB} from "@/lib/db";
-import {StatsApiResponse} from "@/types/stats";
+import {PlayerDetailApiResponse} from "@/types/stats";
 import {getRsaAuthHeaders} from "@/lib/rsa-auth";
 
 export const dynamic = "force-dynamic";
@@ -15,11 +14,13 @@ export async function OPTIONS() {
     return new NextResponse(null, {status: 204, headers: CORS_HEADERS});
 }
 
-export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     try {
         const {id} = await context.params;
-        const target = decodeURIComponent(id).trim().toLowerCase();
+        const decodedId = decodeURIComponent(id).trim();
+        if (!decodedId) {
+            return NextResponse.json({error: "플레이어 식별자가 비어 있습니다."}, {status: 400, headers: CORS_HEADERS});
+        }
 
         const remoteApiUrl = process.env.REMOTE_API_URL?.trim();
         const apiSecretKey = process.env.API_SECRET_KEY?.trim();
@@ -29,44 +30,59 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
             if (providedKey !== apiSecretKey) {
                 return NextResponse.json(
                     {error: "Unauthorized: Invalid x-api-key"},
-                    {status: 401, headers: CORS_HEADERS}
+                    {status: 401, headers: CORS_HEADERS},
                 );
             }
         }
 
-        let data: StatsApiResponse;
-        if (remoteApiUrl) {
-            const targetPath = "/api/stats";
-            const rsaHeaders = getRsaAuthHeaders("GET", targetPath);
-            const res = await fetch(`${remoteApiUrl.replace(/\/$/, "")}${targetPath}`, {
-                headers: {
-                    Accept: "application/json",
-                    ...rsaHeaders,
-                    ...(apiSecretKey ? {"x-api-key": apiSecretKey} : {}),
+        if (!remoteApiUrl) {
+            return NextResponse.json(
+                {
+                    error: "REMOTE_API_URL is not configured.",
+                    details: "Set REMOTE_API_URL in .env.local pointing to Obsidian's stats HTTP API.",
                 },
-                cache: "no-store",
-            });
-            if (!res.ok) {
-                throw new Error(`Remote API responded with status ${res.status}`);
-            }
-            data = (await res.json()) as StatsApiResponse;
-        } else {
-            data = await queryStatsFromLocalMariaDB();
+                {status: 503, headers: CORS_HEADERS},
+            );
         }
 
-        const player = data.players.find((p) => p.uuid.toLowerCase() === target || p.username.toLowerCase() === target);
+        const refresh = request.nextUrl.searchParams.get("refresh") === "true";
+        const signPath = `/api/players/${decodedId}`;
+        const requestPath = `/api/players/${encodeURIComponent(decodedId)}${refresh ? "?refresh=true" : ""}`;
+        const rsaHeaders = getRsaAuthHeaders("GET", signPath);
 
-        if (!player) {
+        const res = await fetch(`${remoteApiUrl.replace(/\/$/, "")}${requestPath}`, {
+            headers: {
+                Accept: "application/json",
+                ...rsaHeaders,
+                ...(apiSecretKey ? {"x-api-key": apiSecretKey} : {}),
+            },
+            cache: "no-store",
+        });
+
+        if (res.status === 404) {
             return NextResponse.json({error: "해당 플레이어를 찾을 수 없습니다."}, {status: 404, headers: CORS_HEADERS});
         }
 
-        return NextResponse.json({
-            player, queriedAt: data.overview.queriedAt, sourceMode: remoteApiUrl ? "remote-api-proxy" : "local-mariadb",
-        }, {headers: CORS_HEADERS});
+        if (!res.ok) {
+            throw new Error(`Remote API responded with status ${res.status}`);
+        }
+
+        const detail = (await res.json()) as PlayerDetailApiResponse;
+        return NextResponse.json(
+            {
+                ...detail,
+                sourceMode: "remote-api-proxy",
+            },
+            {headers: CORS_HEADERS},
+        );
     } catch (error) {
         console.error("[GET /api/players/[id]] Error:", error);
-        return NextResponse.json({
-            error: "플레이어 데이터를 불러오지 못했습니다.", details: error instanceof Error ? error.message : String(error),
-        }, {status: 500, headers: CORS_HEADERS});
+        return NextResponse.json(
+            {
+                error: "플레이어 데이터를 불러오지 못했습니다.",
+                details: error instanceof Error ? error.message : String(error),
+            },
+            {status: 500, headers: CORS_HEADERS},
+        );
     }
 }
