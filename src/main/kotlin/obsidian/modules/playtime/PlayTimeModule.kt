@@ -131,9 +131,9 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
-                        sendPlayTimeTop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    sendPlayTimeTop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(
             context.plugin.pluginMeta,

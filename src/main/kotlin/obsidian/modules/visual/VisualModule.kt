@@ -113,11 +113,11 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.literal("wand").executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val wand = selectionService.toggleWand(player)
-                        context.locale.send(player, "visual.wand-toggled", "state" to if (wand) "ON" else "OFF")
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val wand = selectionService.toggleWand(player)
+                    context.locale.send(player, "visual.wand-toggled", "state" to if (wand) "ON" else "OFF")
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta, selNode, "Show selection info or toggle Blaze Rod wand", emptyList()
         )
@@ -126,7 +126,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerPortalCommands(registrar: Commands) {
         val setPortalNode = Commands.literal("setportal")
             .requires { it.sender.hasPermission("obsidian.command.setportal") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("name", StringArgumentType.word()).executes { ctx ->
+            .then(
+                Commands.argument("name", StringArgumentType.word()).executes { ctx ->
                     val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                     val region = selectionService.getRegion(player)
                     if (region == null) {
@@ -149,35 +150,36 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     Command.SINGLE_SUCCESS
                 }.then(
                     Commands.argument("warp", StringArgumentType.word()).executes { ctx ->
-                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                            val region = selectionService.getRegion(player)
-                            if (region == null) {
-                                context.locale.send(player, "visual.selection-required")
-                                return@executes 0
-                            }
-                            val name = StringArgumentType.getString(ctx, "name")
-                            val warpName = StringArgumentType.getString(ctx, "warp")
-                            val def = PortalDefinition(name = name, region = region, targetWarp = warpName)
-                            portalService.createOrUpdatePortal(def)
-                            context.locale.send(player, "visual.portal-saved", "name" to "$name -> $warpName")
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val region = selectionService.getRegion(player)
+                        if (region == null) {
+                            context.locale.send(player, "visual.selection-required")
+                            return@executes 0
+                        }
+                        val name = StringArgumentType.getString(ctx, "name")
+                        val warpName = StringArgumentType.getString(ctx, "warp")
+                        val def = PortalDefinition(name = name, region = region, targetWarp = warpName)
+                        portalService.createOrUpdatePortal(def)
+                        context.locale.send(player, "visual.portal-saved", "name" to "$name -> $warpName")
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(context.plugin.pluginMeta, setPortalNode, "Create or update a cuboid portal", emptyList())
 
         val removePortalNode = Commands.literal("removeportal")
             .requires { it.sender.hasPermission("obsidian.command.setportal") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("name", StringArgumentType.word()).suggests { _, builder ->
-                    portalService.getAllPortals().map { it.name }.forEach(builder::suggest)
-                    builder.buildFuture()
-                }.executes { ctx ->
-                    val name = StringArgumentType.getString(ctx, "name")
-                    if (portalService.removePortal(name)) {
-                        context.locale.send(ctx.source.sender, "visual.portal-removed", "name" to name)
-                    } else {
-                        context.locale.send(ctx.source.sender, "visual.portal-not-found", "name" to name)
-                    }
-                    Command.SINGLE_SUCCESS
-                }).build()
+                portalService.getAllPortals().map { it.name }.forEach(builder::suggest)
+                builder.buildFuture()
+            }.executes { ctx ->
+                val name = StringArgumentType.getString(ctx, "name")
+                if (portalService.removePortal(name)) {
+                    context.locale.send(ctx.source.sender, "visual.portal-removed", "name" to name)
+                } else {
+                    context.locale.send(ctx.source.sender, "visual.portal-not-found", "name" to name)
+                }
+                Command.SINGLE_SUCCESS
+            }).build()
         registrar.register(context.plugin.pluginMeta, removePortalNode, "Remove a portal", emptyList())
 
         val portalsNode = Commands.literal("portals")
@@ -204,19 +206,21 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.hologram") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.literal("list").executes { ctx ->
-                        val sender = ctx.source.sender
-                        val all = hologramService.getAllHolograms()
-                        if (all.isEmpty()) {
-                            context.locale.send(sender, "visual.hologram-list-empty")
-                            return@executes Command.SINGLE_SUCCESS
-                        }
-                        context.locale.send(sender, "visual.hologram-list-header", "count" to all.size)
-                        all.forEach { h ->
-                            sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${h.id}</aqua> <gray>(${h.location.world}, ${h.lines.size} lines)</gray>"))
-                        }
-                        Command.SINGLE_SUCCESS
-                    })
-            .then(Commands.literal("create").then(Commands.argument("id", StringArgumentType.word()).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val all = hologramService.getAllHolograms()
+                    if (all.isEmpty()) {
+                        context.locale.send(sender, "visual.hologram-list-empty")
+                        return@executes Command.SINGLE_SUCCESS
+                    }
+                    context.locale.send(sender, "visual.hologram-list-header", "count" to all.size)
+                    all.forEach { h ->
+                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${h.id}</aqua> <gray>(${h.location.world}, ${h.lines.size} lines)</gray>"))
+                    }
+                    Command.SINGLE_SUCCESS
+                })
+            .then(
+                Commands.literal("create").then(
+                    Commands.argument("id", StringArgumentType.word()).executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val id = StringArgumentType.getString(ctx, "id")
                         val loc = StoredLocation.fromBukkit(player.location.clone().add(0.0, 2.0, 0.0))
@@ -231,138 +235,150 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                         Command.SINGLE_SUCCESS
                     }.then(
                         Commands.argument("text", StringArgumentType.greedyString()).executes { ctx ->
-                                val player =
-                                    CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                                val id = StringArgumentType.getString(ctx, "id")
-                                val text = StringArgumentType.getString(ctx, "text")
-                                val loc = StoredLocation.fromBukkit(player.location.clone().add(0.0, 2.0, 0.0))
-                                    ?: return@executes 0
-                                hologramService.createHologram(id, loc, listOf(text))
-                                context.locale.send(player, "visual.hologram-created", "id" to id)
-                                Command.SINGLE_SUCCESS
-                            })))
+                            val player =
+                                CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                            val id = StringArgumentType.getString(ctx, "id")
+                            val text = StringArgumentType.getString(ctx, "text")
+                            val loc = StoredLocation.fromBukkit(player.location.clone().add(0.0, 2.0, 0.0))
+                                ?: return@executes 0
+                            hologramService.createHologram(id, loc, listOf(text))
+                            context.locale.send(player, "visual.hologram-created", "id" to id)
+                            Command.SINGLE_SUCCESS
+                        })
+                )
+            )
             .then(Commands.literal("delete").then(Commands.argument("id", StringArgumentType.word()).suggests { _, b ->
-                        hologramService.getAllHolograms().map { it.id }.forEach(b::suggest)
-                        b.buildFuture()
-                    }.executes { ctx ->
-                        val id = StringArgumentType.getString(ctx, "id")
-                        if (hologramService.deleteHologram(id)) {
-                            context.locale.send(ctx.source.sender, "visual.hologram-deleted", "id" to id)
-                        } else {
-                            context.locale.send(ctx.source.sender, "visual.hologram-not-found", "id" to id)
-                        }
-                        Command.SINGLE_SUCCESS
-                    })).then(
+                hologramService.getAllHolograms().map { it.id }.forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val id = StringArgumentType.getString(ctx, "id")
+                if (hologramService.deleteHologram(id)) {
+                    context.locale.send(ctx.source.sender, "visual.hologram-deleted", "id" to id)
+                } else {
+                    context.locale.send(ctx.source.sender, "visual.hologram-not-found", "id" to id)
+                }
+                Command.SINGLE_SUCCESS
+            })).then(
                 Commands.literal("addline").then(
                     Commands.argument("id", StringArgumentType.word()).then(
                         Commands.argument("text", StringArgumentType.greedyString()).executes { ctx ->
-                                val id = StringArgumentType.getString(ctx, "id")
-                                val def = hologramService.getHologram(id)
-                                if (def == null) {
-                                    context.locale.send(
-                                        ctx.source.sender, "visual.hologram-not-found", "id" to id
-                                    )
-                                    return@executes 0
-                                }
-                                def.lines += StringArgumentType.getString(ctx, "text")
-                                hologramService.saveAndRefresh(def)
-                                context.locale.send(
-                                    ctx.source.sender, "visual.hologram-updated", "id" to def.id
-                                )
-                                Command.SINGLE_SUCCESS
-                            })))
-            .then(
-                Commands.literal("setline").then(
-                        Commands.argument("id", StringArgumentType.word())
-                            .then(
-                                Commands.argument("line", IntegerArgumentType.integer(1, 30)).then(
-                                        Commands.argument("text", StringArgumentType.greedyString()).executes { ctx ->
-                                                val id = StringArgumentType.getString(ctx, "id")
-                                                val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
-                                                val def = hologramService.getHologram(id)
-                                                if (def == null) {
-                                                    context.locale.send(
-                                                        ctx.source.sender, "visual.hologram-not-found", "id" to id
-                                                    )
-                                                    return@executes 0
-                                                }
-                                                while (def.lines.size <= lineIdx) def.lines += ""
-                                                def.lines[lineIdx] = StringArgumentType.getString(ctx, "text")
-                                                hologramService.saveAndRefresh(def)
-                                                context.locale.send(
-                                                    ctx.source.sender, "visual.hologram-updated", "id" to def.id
-                                                )
-                                                Command.SINGLE_SUCCESS
-                                            }))))
-            .then(
-                Commands.literal("removeline").then(
-                        Commands.argument("id", StringArgumentType.word()).then(
-                                Commands.argument("line", IntegerArgumentType.integer(1, 30)).executes { ctx ->
-                                        val id = StringArgumentType.getString(ctx, "id")
-                                        val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
-                                        val def = hologramService.getHologram(id)
-                                        if (def == null) {
-                                            context.locale.send(
-                                                ctx.source.sender, "visual.hologram-not-found", "id" to id
-                                            )
-                                            return@executes 0
-                                        }
-                                        if (lineIdx in def.lines.indices) {
-                                            def.lines.removeAt(lineIdx)
-                                            hologramService.saveAndRefresh(def)
-                                        }
-                                        context.locale.send(
-                                            ctx.source.sender, "visual.hologram-updated", "id" to def.id
-                                        )
-                                        Command.SINGLE_SUCCESS
-                                    }))).then(
-                Commands.literal("movehere").then(
-                    Commands.argument("id", StringArgumentType.word()).executes { ctx ->
-                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                             val id = StringArgumentType.getString(ctx, "id")
                             val def = hologramService.getHologram(id)
                             if (def == null) {
-                                context.locale.send(player, "visual.hologram-not-found", "id" to id)
+                                context.locale.send(
+                                    ctx.source.sender, "visual.hologram-not-found", "id" to id
+                                )
                                 return@executes 0
                             }
-                            val newLoc = StoredLocation.fromBukkit(player.location.clone().add(0.0, 2.0, 0.0))
-                                ?: return@executes 0
-                            hologramService.moveHologram(def, newLoc)
-                            context.locale.send(player, "visual.hologram-updated", "id" to def.id)
+                            def.lines += StringArgumentType.getString(ctx, "text")
+                            hologramService.saveAndRefresh(def)
+                            context.locale.send(
+                                ctx.source.sender, "visual.hologram-updated", "id" to def.id
+                            )
                             Command.SINGLE_SUCCESS
-                        }))
+                        })
+                )
+            )
+            .then(
+                Commands.literal("setline").then(
+                    Commands.argument("id", StringArgumentType.word())
+                        .then(
+                            Commands.argument("line", IntegerArgumentType.integer(1, 30)).then(
+                                Commands.argument("text", StringArgumentType.greedyString()).executes { ctx ->
+                                    val id = StringArgumentType.getString(ctx, "id")
+                                    val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
+                                    val def = hologramService.getHologram(id)
+                                    if (def == null) {
+                                        context.locale.send(
+                                            ctx.source.sender, "visual.hologram-not-found", "id" to id
+                                        )
+                                        return@executes 0
+                                    }
+                                    while (def.lines.size <= lineIdx) def.lines += ""
+                                    def.lines[lineIdx] = StringArgumentType.getString(ctx, "text")
+                                    hologramService.saveAndRefresh(def)
+                                    context.locale.send(
+                                        ctx.source.sender, "visual.hologram-updated", "id" to def.id
+                                    )
+                                    Command.SINGLE_SUCCESS
+                                })
+                        )
+                )
+            )
+            .then(
+                Commands.literal("removeline").then(
+                    Commands.argument("id", StringArgumentType.word()).then(
+                        Commands.argument("line", IntegerArgumentType.integer(1, 30)).executes { ctx ->
+                            val id = StringArgumentType.getString(ctx, "id")
+                            val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
+                            val def = hologramService.getHologram(id)
+                            if (def == null) {
+                                context.locale.send(
+                                    ctx.source.sender, "visual.hologram-not-found", "id" to id
+                                )
+                                return@executes 0
+                            }
+                            if (lineIdx in def.lines.indices) {
+                                def.lines.removeAt(lineIdx)
+                                hologramService.saveAndRefresh(def)
+                            }
+                            context.locale.send(
+                                ctx.source.sender, "visual.hologram-updated", "id" to def.id
+                            )
+                            Command.SINGLE_SUCCESS
+                        })
+                )
+            ).then(
+                Commands.literal("movehere").then(
+                    Commands.argument("id", StringArgumentType.word()).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val id = StringArgumentType.getString(ctx, "id")
+                        val def = hologramService.getHologram(id)
+                        if (def == null) {
+                            context.locale.send(player, "visual.hologram-not-found", "id" to id)
+                            return@executes 0
+                        }
+                        val newLoc = StoredLocation.fromBukkit(player.location.clone().add(0.0, 2.0, 0.0))
+                            ?: return@executes 0
+                        hologramService.moveHologram(def, newLoc)
+                        context.locale.send(player, "visual.hologram-updated", "id" to def.id)
+                        Command.SINGLE_SUCCESS
+                    })
+            )
             .then(
                 Commands.literal("billboard").then(
-                        Commands.argument("id", StringArgumentType.word()).then(
-                                Commands.argument("mode", StringArgumentType.word()).executes { ctx ->
-                                        val id = StringArgumentType.getString(ctx, "id")
-                                        val def = hologramService.getHologram(id)
-                                        if (def == null) {
-                                            context.locale.send(
-                                                ctx.source.sender, "visual.hologram-not-found", "id" to id
-                                            )
-                                            return@executes 0
-                                        }
-                                        val mode = runCatching {
-                                            Display.Billboard.valueOf(
-                                                StringArgumentType.getString(ctx, "mode").uppercase()
-                                            )
-                                        }.getOrNull()
-                                        if (mode == null) {
-                                            context.locale.send(
-                                                ctx.source.sender,
-                                                "general.invalid-usage",
-                                                "usage" to "/hologram billboard <id> <CENTER|VERTICAL|HORIZONTAL|FIXED>"
-                                            )
-                                            return@executes 0
-                                        }
-                                        def.billboard = mode
-                                        hologramService.moveHologram(def, def.location)
-                                        context.locale.send(
-                                            ctx.source.sender, "visual.hologram-updated", "id" to def.id
-                                        )
-                                        Command.SINGLE_SUCCESS
-                                    }))).build()
+                    Commands.argument("id", StringArgumentType.word()).then(
+                        Commands.argument("mode", StringArgumentType.word()).executes { ctx ->
+                            val id = StringArgumentType.getString(ctx, "id")
+                            val def = hologramService.getHologram(id)
+                            if (def == null) {
+                                context.locale.send(
+                                    ctx.source.sender, "visual.hologram-not-found", "id" to id
+                                )
+                                return@executes 0
+                            }
+                            val mode = runCatching {
+                                Display.Billboard.valueOf(
+                                    StringArgumentType.getString(ctx, "mode").uppercase()
+                                )
+                            }.getOrNull()
+                            if (mode == null) {
+                                context.locale.send(
+                                    ctx.source.sender,
+                                    "general.invalid-usage",
+                                    "usage" to "/hologram billboard <id> <CENTER|VERTICAL|HORIZONTAL|FIXED>"
+                                )
+                                return@executes 0
+                            }
+                            def.billboard = mode
+                            hologramService.moveHologram(def, def.location)
+                            context.locale.send(
+                                ctx.source.sender, "visual.hologram-updated", "id" to def.id
+                            )
+                            Command.SINGLE_SUCCESS
+                        })
+                )
+            ).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -385,48 +401,48 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                 armorStandService.openEditor(player, stand)
                 Command.SINGLE_SUCCESS
             }.then(Commands.argument("flag", StringArgumentType.word()).suggests { _, b ->
-                    listOf(
-                        "small",
-                        "arms",
-                        "baseplate",
-                        "visible",
-                        "gravity",
-                        "marker",
-                        "glowing",
-                        "customname",
-                        "resetpose"
-                    ).forEach(b::suggest)
-                    b.buildFuture()
-                }.executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    val stand = armorStandService.findTargetArmorStand(player)
-                    if (stand == null) {
-                        context.locale.send(player, "visual.astand-not-found")
-                        return@executes 0
-                    }
-                    val flag = StringArgumentType.getString(ctx, "flag")
-                    if (flag.equals("resetpose", ignoreCase = true)) {
-                        armorStandService.resetPose(stand)
-                        context.locale.send(player, "visual.astand-updated", "flag" to "pose", "state" to "RESET")
-                        return@executes Command.SINGLE_SUCCESS
-                    }
-                    val result = armorStandService.applyFlag(stand, flag)
-                    if (result == null) {
-                        context.locale.send(
-                            player,
-                            "general.invalid-usage",
-                            "usage" to "/astand [small|arms|baseplate|visible|gravity|marker|glowing|resetpose]"
-                        )
-                        return@executes 0
-                    }
+                listOf(
+                    "small",
+                    "arms",
+                    "baseplate",
+                    "visible",
+                    "gravity",
+                    "marker",
+                    "glowing",
+                    "customname",
+                    "resetpose"
+                ).forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val stand = armorStandService.findTargetArmorStand(player)
+                if (stand == null) {
+                    context.locale.send(player, "visual.astand-not-found")
+                    return@executes 0
+                }
+                val flag = StringArgumentType.getString(ctx, "flag")
+                if (flag.equals("resetpose", ignoreCase = true)) {
+                    armorStandService.resetPose(stand)
+                    context.locale.send(player, "visual.astand-updated", "flag" to "pose", "state" to "RESET")
+                    return@executes Command.SINGLE_SUCCESS
+                }
+                val result = armorStandService.applyFlag(stand, flag)
+                if (result == null) {
                     context.locale.send(
                         player,
-                        "visual.astand-updated",
-                        "flag" to result.first,
-                        "state" to if (result.second) "ON" else "OFF"
+                        "general.invalid-usage",
+                        "usage" to "/astand [small|arms|baseplate|visible|gravity|marker|glowing|resetpose]"
                     )
-                    Command.SINGLE_SUCCESS
-                }).build()
+                    return@executes 0
+                }
+                context.locale.send(
+                    player,
+                    "visual.astand-updated",
+                    "flag" to result.first,
+                    "state" to if (result.second) "ON" else "OFF"
+                )
+                Command.SINGLE_SUCCESS
+            }).build()
         registrar.register(
             context.plugin.pluginMeta,
             node,
@@ -438,7 +454,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerSignCommands(registrar: Commands) {
         val signEditNode = Commands.literal("signedit")
             .requires { it.sender.hasPermission("obsidian.command.signedit") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("line", IntegerArgumentType.integer(1, 4)).executes { ctx ->
+            .then(
+                Commands.argument("line", IntegerArgumentType.integer(1, 4)).executes { ctx ->
                     val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                     val sign = signService.findTargetSign(player)
                     if (sign == null) {
@@ -451,18 +468,19 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     Command.SINGLE_SUCCESS
                 }.then(
                     Commands.argument("text", StringArgumentType.greedyString()).executes { ctx ->
-                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                            val sign = signService.findTargetSign(player)
-                            if (sign == null) {
-                                context.locale.send(player, "visual.sign-not-found")
-                                return@executes 0
-                            }
-                            val line = IntegerArgumentType.getInteger(ctx, "line")
-                            val text = StringArgumentType.getString(ctx, "text")
-                            signService.editSignLine(sign, Side.FRONT, line, text)
-                            context.locale.send(player, "visual.sign-updated", "line" to line)
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val sign = signService.findTargetSign(player)
+                        if (sign == null) {
+                            context.locale.send(player, "visual.sign-not-found")
+                            return@executes 0
+                        }
+                        val line = IntegerArgumentType.getInteger(ctx, "line")
+                        val text = StringArgumentType.getString(ctx, "text")
+                        signService.editSignLine(sign, Side.FRONT, line, text)
+                        context.locale.send(player, "visual.sign-updated", "line" to line)
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta,
             signEditNode,
@@ -474,57 +492,59 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.dsign") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.literal("list").executes { ctx ->
-                        val sender = ctx.source.sender
-                        val all = signService.getAllDynamicSigns()
-                        if (all.isEmpty()) {
-                            context.locale.send(sender, "visual.dsign-list-empty")
-                            return@executes Command.SINGLE_SUCCESS
-                        }
-                        context.locale.send(sender, "visual.dsign-list-header", "count" to all.size)
-                        all.forEach { d ->
-                            sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${d.key}</aqua>"))
-                        }
-                        Command.SINGLE_SUCCESS
-                    })
+                    val sender = ctx.source.sender
+                    val all = signService.getAllDynamicSigns()
+                    if (all.isEmpty()) {
+                        context.locale.send(sender, "visual.dsign-list-empty")
+                        return@executes Command.SINGLE_SUCCESS
+                    }
+                    context.locale.send(sender, "visual.dsign-list-header", "count" to all.size)
+                    all.forEach { d ->
+                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${d.key}</aqua>"))
+                    }
+                    Command.SINGLE_SUCCESS
+                })
             .then(
                 Commands.literal("set").then(
-                        Commands.argument("line", IntegerArgumentType.integer(1, 4)).then(
-                                Commands.argument("template", StringArgumentType.greedyString()).executes { ctx ->
-                                        val player =
-                                            CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                                        val sign = signService.findTargetSign(player)
-                                        if (sign == null) {
-                                            context.locale.send(player, "visual.sign-not-found")
-                                            return@executes 0
-                                        }
-                                        val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
-                                        val template = StringArgumentType.getString(ctx, "template")
-                                        val existing = signService.getDynamicSign(sign)
-                                        if (existing == null) {
-                                            val front = MutableList(4) { "" }
-                                            front[lineIdx] = template
-                                            signService.registerDynamicSign(sign, front, List(4) { "" })
-                                        } else {
-                                            existing.frontTemplates[lineIdx] = template
-                                            signService.saveAndRefresh(existing)
-                                        }
-                                        context.locale.send(player, "visual.dsign-updated", "line" to (lineIdx + 1))
-                                        Command.SINGLE_SUCCESS
-                                    }))).then(
+                    Commands.argument("line", IntegerArgumentType.integer(1, 4)).then(
+                        Commands.argument("template", StringArgumentType.greedyString()).executes { ctx ->
+                            val player =
+                                CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                            val sign = signService.findTargetSign(player)
+                            if (sign == null) {
+                                context.locale.send(player, "visual.sign-not-found")
+                                return@executes 0
+                            }
+                            val lineIdx = IntegerArgumentType.getInteger(ctx, "line") - 1
+                            val template = StringArgumentType.getString(ctx, "template")
+                            val existing = signService.getDynamicSign(sign)
+                            if (existing == null) {
+                                val front = MutableList(4) { "" }
+                                front[lineIdx] = template
+                                signService.registerDynamicSign(sign, front, List(4) { "" })
+                            } else {
+                                existing.frontTemplates[lineIdx] = template
+                                signService.saveAndRefresh(existing)
+                            }
+                            context.locale.send(player, "visual.dsign-updated", "line" to (lineIdx + 1))
+                            Command.SINGLE_SUCCESS
+                        })
+                )
+            ).then(
                 Commands.literal("remove").executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val sign = signService.findTargetSign(player)
-                        if (sign == null) {
-                            context.locale.send(player, "visual.sign-not-found")
-                            return@executes 0
-                        }
-                        if (signService.removeDynamicSign(sign)) {
-                            context.locale.send(player, "visual.dsign-removed")
-                        } else {
-                            context.locale.send(player, "visual.sign-not-found")
-                        }
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val sign = signService.findTargetSign(player)
+                    if (sign == null) {
+                        context.locale.send(player, "visual.sign-not-found")
+                        return@executes 0
+                    }
+                    if (signService.removeDynamicSign(sign)) {
+                        context.locale.send(player, "visual.dsign-removed")
+                    } else {
+                        context.locale.send(player, "visual.sign-not-found")
+                    }
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta, dsignNode, "Manage placeholder-powered dynamic signs", emptyList()
         )

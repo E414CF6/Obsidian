@@ -137,47 +137,48 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.argument("target", ArgumentTypes.player()).then(
                     Commands.argument("amount", StringArgumentType.word()).executes { ctx ->
-                            val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                            val resolver = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            val target = resolver.resolve(ctx.source).firstOrNull() ?: return@executes 0
-                            if (target.uniqueId == sender.uniqueId) {
-                                context.locale.send(sender, "economy.pay-self")
-                                return@executes 0
-                            }
-                            val rawAmount = StringArgumentType.getString(ctx, "amount")
-                            val amount = EconomyService.parseAmount(rawAmount)
-                            if (amount == null) {
-                                context.locale.send(sender, "economy.invalid-amount", "input" to rawAmount)
-                                return@executes 0
-                            }
-                            if (amount < economyService.minPayAmount) {
-                                context.locale.send(
-                                    sender,
-                                    "economy.below-min-pay",
-                                    "min" to economyService.formatMoney(economyService.minPayAmount),
-                                )
-                                return@executes 0
-                            }
-                            if (!economyService.transfer(
-                                    sender.uniqueId, sender.name, target.uniqueId, target.name, amount
-                                )
-                            ) {
-                                context.locale.send(
-                                    sender,
-                                    "economy.insufficient-funds",
-                                    "amount" to economyService.formatMoney(amount),
-                                )
-                                return@executes 0
-                            }
-                            val formatted = economyService.formatMoney(amount)
+                        val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val resolver = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                        val target = resolver.resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        if (target.uniqueId == sender.uniqueId) {
+                            context.locale.send(sender, "economy.pay-self")
+                            return@executes 0
+                        }
+                        val rawAmount = StringArgumentType.getString(ctx, "amount")
+                        val amount = EconomyService.parseAmount(rawAmount)
+                        if (amount == null) {
+                            context.locale.send(sender, "economy.invalid-amount", "input" to rawAmount)
+                            return@executes 0
+                        }
+                        if (amount < economyService.minPayAmount) {
                             context.locale.send(
-                                sender, "economy.paid", "target" to target.name, "amount" to formatted
+                                sender,
+                                "economy.below-min-pay",
+                                "min" to economyService.formatMoney(economyService.minPayAmount),
                             )
+                            return@executes 0
+                        }
+                        if (!economyService.transfer(
+                                sender.uniqueId, sender.name, target.uniqueId, target.name, amount
+                            )
+                        ) {
                             context.locale.send(
-                                target, "economy.received", "sender" to sender.name, "amount" to formatted
+                                sender,
+                                "economy.insufficient-funds",
+                                "amount" to economyService.formatMoney(amount),
                             )
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                            return@executes 0
+                        }
+                        val formatted = economyService.formatMoney(amount)
+                        context.locale.send(
+                            sender, "economy.paid", "target" to target.name, "amount" to formatted
+                        )
+                        context.locale.send(
+                            target, "economy.received", "sender" to sender.name, "amount" to formatted
+                        )
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
 
         registrar.register(context.plugin.pluginMeta, node, "Pay money to another player", emptyList())
     }
@@ -197,19 +198,20 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.literal("reset")
                     .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, builder ->
-                            CommandHelper.suggestOnlinePlayers(ctx.source.sender, builder.remaining)
-                                .forEach(builder::suggest)
-                            builder.buildFuture()
-                        }.executes { ctx ->
-                            val sender = ctx.source.sender
-                            val targetName = StringArgumentType.getString(ctx, "target")
-                            updateMoneyTarget(
-                                sender, targetName, economyService.startingBalance
-                            ) { uuid, name, amt ->
-                                economyService.setBalance(uuid, amt, name)
-                            }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, builder.remaining)
+                            .forEach(builder::suggest)
+                        builder.buildFuture()
+                    }.executes { ctx ->
+                        val sender = ctx.source.sender
+                        val targetName = StringArgumentType.getString(ctx, "target")
+                        updateMoneyTarget(
+                            sender, targetName, economyService.startingBalance
+                        ) { uuid, name, amt ->
+                            economyService.setBalance(uuid, amt, name)
+                        }
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -222,22 +224,24 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
     private fun moneySubcommand(
         literal: String,
         action: (java.util.UUID, String, Double) -> Double,
-    ) = Commands.literal(literal).then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, builder ->
-                CommandHelper.suggestOnlinePlayers(ctx.source.sender, builder.remaining).forEach(builder::suggest)
-                builder.buildFuture()
-            }.then(
-                Commands.argument("amount", StringArgumentType.word()).executes { ctx ->
-                        val sender = ctx.source.sender
-                        val targetName = StringArgumentType.getString(ctx, "target")
-                        val rawAmount = StringArgumentType.getString(ctx, "amount")
-                        val amount = EconomyService.parseAmount(rawAmount)
-                        if (amount == null) {
-                            context.locale.send(sender, "economy.invalid-amount", "input" to rawAmount)
-                            return@executes 0
-                        }
-                        updateMoneyTarget(sender, targetName, amount, action)
-                        Command.SINGLE_SUCCESS
-                    }))
+    ) = Commands.literal(literal).then(
+        Commands.argument("target", StringArgumentType.word()).suggests { ctx, builder ->
+            CommandHelper.suggestOnlinePlayers(ctx.source.sender, builder.remaining).forEach(builder::suggest)
+            builder.buildFuture()
+        }.then(
+            Commands.argument("amount", StringArgumentType.word()).executes { ctx ->
+                val sender = ctx.source.sender
+                val targetName = StringArgumentType.getString(ctx, "target")
+                val rawAmount = StringArgumentType.getString(ctx, "amount")
+                val amount = EconomyService.parseAmount(rawAmount)
+                if (amount == null) {
+                    context.locale.send(sender, "economy.invalid-amount", "input" to rawAmount)
+                    return@executes 0
+                }
+                updateMoneyTarget(sender, targetName, amount, action)
+                Command.SINGLE_SUCCESS
+            })
+    )
 
     private fun updateMoneyTarget(
         sender: CommandSender,
@@ -294,9 +298,9 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
-                        sendBaltop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    sendBaltop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -344,29 +348,29 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.cheque") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("amount", StringArgumentType.word()).executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val rawAmount = StringArgumentType.getString(ctx, "amount")
-                        val amount = EconomyService.parseAmount(rawAmount)
-                        if (amount == null) {
-                            context.locale.send(player, "economy.invalid-amount", "input" to rawAmount)
-                            return@executes 0
-                        }
-                        if (!economyService.withdraw(player.uniqueId, amount, player.name)) {
-                            context.locale.send(
-                                player,
-                                "economy.insufficient-funds",
-                                "amount" to economyService.formatMoney(amount),
-                            )
-                            return@executes 0
-                        }
-                        val item = economyService.createChequeItem(player.name, amount)
-                        val leftover = player.inventory.addItem(item)
-                        leftover.values.forEach { player.world.dropItemNaturally(player.location, it) }
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val rawAmount = StringArgumentType.getString(ctx, "amount")
+                    val amount = EconomyService.parseAmount(rawAmount)
+                    if (amount == null) {
+                        context.locale.send(player, "economy.invalid-amount", "input" to rawAmount)
+                        return@executes 0
+                    }
+                    if (!economyService.withdraw(player.uniqueId, amount, player.name)) {
                         context.locale.send(
-                            player, "economy.cheque-created", "amount" to economyService.formatMoney(amount)
+                            player,
+                            "economy.insufficient-funds",
+                            "amount" to economyService.formatMoney(amount),
                         )
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                        return@executes 0
+                    }
+                    val item = economyService.createChequeItem(player.name, amount)
+                    val leftover = player.inventory.addItem(item)
+                    leftover.values.forEach { player.world.dropItemNaturally(player.location, it) }
+                    context.locale.send(
+                        player, "economy.cheque-created", "amount" to economyService.formatMoney(amount)
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -410,22 +414,22 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.setworth") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("price", DoubleArgumentType.doubleArg(0.0)).executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val item = player.inventory.itemInMainHand
-                        if (item.type.isAir) {
-                            context.locale.send(player, "utility.hat-invalid")
-                            return@executes 0
-                        }
-                        val price = DoubleArgumentType.getDouble(ctx, "price")
-                        worthService.setSellPrice(item.type, price)
-                        context.locale.send(
-                            player,
-                            "economy.worth-set",
-                            "item" to item.type.name,
-                            "amount" to economyService.formatMoney(price),
-                        )
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val item = player.inventory.itemInMainHand
+                    if (item.type.isAir) {
+                        context.locale.send(player, "utility.hat-invalid")
+                        return@executes 0
+                    }
+                    val price = DoubleArgumentType.getDouble(ctx, "price")
+                    worthService.setSellPrice(item.type, price)
+                    context.locale.send(
+                        player,
+                        "economy.worth-set",
+                        "item" to item.type.name,
+                        "amount" to economyService.formatMoney(price),
+                    )
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(context.plugin.pluginMeta, node, "Set sell price of held item", emptyList())
     }
@@ -439,15 +443,15 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.literal("hand").executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        handleSell(player, sellAll = false)
-                        Command.SINGLE_SUCCESS
-                    }).then(
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    handleSell(player, sellAll = false)
+                    Command.SINGLE_SUCCESS
+                }).then(
                 Commands.literal("all").executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        handleSell(player, sellAll = true)
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    handleSell(player, sellAll = true)
+                    Command.SINGLE_SUCCESS
+                }).build()
 
         registrar.register(context.plugin.pluginMeta, node, "Sell held item or entire inventory", emptyList())
     }

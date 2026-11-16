@@ -63,12 +63,12 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
             .requires { it.sender.hasPermission("obsidian.command.server") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("name", StringArgumentType.word()).executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val server = StringArgumentType.getString(ctx, "name")
-                        sendToServer(player, server)
-                        context.locale.send(player, "proxy.connecting", "server" to server)
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val server = StringArgumentType.getString(ctx, "name")
+                    sendToServer(player, server)
+                    context.locale.send(player, "proxy.connecting", "server" to server)
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta, serverNode, "Connect to another proxy backend server", emptyList()
         )
@@ -77,11 +77,11 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
             .requires { it.sender.hasPermission("obsidian.command.sendall") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("server", StringArgumentType.word()).executes { ctx ->
-                        val server = StringArgumentType.getString(ctx, "server")
-                        val count = sendAllToServer(server)
-                        context.locale.send(ctx.source.sender, "proxy.sent-all", "count" to count, "server" to server)
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val server = StringArgumentType.getString(ctx, "server")
+                    val count = sendAllToServer(server)
+                    context.locale.send(ctx.source.sender, "proxy.sent-all", "count" to count, "server" to server)
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta, sendAllNode, "Send all online players to another server", emptyList()
         )
@@ -90,15 +90,15 @@ class ProxyModule(private val context: ObsidianContext) : ObsidianModule, Plugin
             .requires { it.sender.hasPermission("obsidian.command.bbroadcast") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                        val msg = StringArgumentType.getString(ctx, "message")
-                        if (broadcastAcrossProxy(msg)) {
-                            context.locale.send(ctx.source.sender, "proxy.broadcast-sent")
-                        } else {
-                            // No online player carrier available; deliver locally so RCON/console still verifies cleanly.
-                            Bukkit.broadcast(TextFormatter.format(msg))
-                        }
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val msg = StringArgumentType.getString(ctx, "message")
+                    if (broadcastAcrossProxy(msg)) {
+                        context.locale.send(ctx.source.sender, "proxy.broadcast-sent")
+                    } else {
+                        // No online player carrier available; deliver locally so RCON/console still verifies cleanly.
+                        Bukkit.broadcast(TextFormatter.format(msg))
+                    }
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, bcNode, "Broadcast a message across proxy servers", emptyList())
     }
 

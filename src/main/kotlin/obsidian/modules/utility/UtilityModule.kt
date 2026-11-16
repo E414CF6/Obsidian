@@ -49,31 +49,31 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         val gmNode = Commands.literal("gm")
             .requires { it.sender.hasPermission("obsidian.command.gm") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("mode", StringArgumentType.word()).suggests { _, builder ->
-                    listOf(
-                        "survival",
-                        "creative",
-                        "adventure",
-                        "spectator"
-                    ).filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
-                    builder.buildFuture()
-                }.executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    val mode = UtilityHelpers.parseGameMode(StringArgumentType.getString(ctx, "mode"))
-                        ?: return@executes sendUsage(
-                            ctx.source.sender, "/gm <survival|creative|adventure|spectator> [player]"
-                        )
-                    applyGameMode(ctx.source.sender, player, mode)
-                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val mode = UtilityHelpers.parseGameMode(StringArgumentType.getString(ctx, "mode"))
-                            ?: return@executes sendUsage(ctx.source.sender, "/gm <mode> [player]")
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        applyGameMode(ctx.source.sender, target, mode)
-                    })).build()
+                listOf(
+                    "survival",
+                    "creative",
+                    "adventure",
+                    "spectator"
+                ).filter { it.startsWith(builder.remaining, ignoreCase = true) }.forEach { builder.suggest(it) }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val mode = UtilityHelpers.parseGameMode(StringArgumentType.getString(ctx, "mode"))
+                    ?: return@executes sendUsage(
+                        ctx.source.sender, "/gm <survival|creative|adventure|spectator> [player]"
+                    )
+                applyGameMode(ctx.source.sender, player, mode)
+            }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
+                    "obsidian.admin"
+                )
+            }.executes { ctx ->
+                val mode = UtilityHelpers.parseGameMode(StringArgumentType.getString(ctx, "mode"))
+                    ?: return@executes sendUsage(ctx.source.sender, "/gm <mode> [player]")
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                applyGameMode(ctx.source.sender, target, mode)
+            })).build()
 
         registrar.register(
             context.plugin.pluginMeta,
@@ -95,14 +95,14 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         applyGameMode(ctx.source.sender, player, mode)
                     }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                            it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
-                                "obsidian.admin"
-                            )
-                        }.executes { ctx ->
-                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                            applyGameMode(ctx.source.sender, target, mode)
-                        }).build()
+                        it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }.executes { ctx ->
+                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        applyGameMode(ctx.source.sender, target, mode)
+                    }).build()
                 registrar.register(
                     context.plugin.pluginMeta, aliasNode, "Shortcut for /gm ${mode.name.lowercase()}", emptyList()
                 )
@@ -185,19 +185,19 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         val node = Commands.literal(name)
             .requires { it.sender.hasPermission("obsidian.command.$name") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("amount", DoubleArgumentType.doubleArg(0.0, 10.0)).executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    val amount = DoubleArgumentType.getDouble(ctx, "amount")
-                    applySpeed(ctx.source.sender, player, amount, forcedFly ?: player.isFlying)
-                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.$name.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val amount = DoubleArgumentType.getDouble(ctx, "amount")
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        applySpeed(ctx.source.sender, target, amount, forcedFly ?: target.isFlying)
-                    })).build()
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val amount = DoubleArgumentType.getDouble(ctx, "amount")
+                applySpeed(ctx.source.sender, player, amount, forcedFly ?: player.isFlying)
+            }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                it.sender.hasPermission("obsidian.command.$name.others") || it.sender.hasPermission(
+                    "obsidian.admin"
+                )
+            }.executes { ctx ->
+                val amount = DoubleArgumentType.getDouble(ctx, "amount")
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                applySpeed(ctx.source.sender, target, amount, forcedFly ?: target.isFlying)
+            })).build()
         registrar.register(context.plugin.pluginMeta, node, description, emptyList())
     }
 
@@ -225,26 +225,26 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 executeRepair(ctx.source.sender, player, "hand")
             }.then(Commands.argument("scope", StringArgumentType.word()).suggests { _, builder ->
-                    listOf("hand", "offhand", "armor", "all").filter {
-                            it.startsWith(
-                                builder.remaining,
-                                ignoreCase = true
-                            )
-                        }.forEach { builder.suggest(it) }
-                    builder.buildFuture()
-                }.executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    executeRepair(ctx.source.sender, player, StringArgumentType.getString(ctx, "scope"))
-                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.repair.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val scope = StringArgumentType.getString(ctx, "scope")
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        executeRepair(ctx.source.sender, target, scope)
-                    })).build()
+                listOf("hand", "offhand", "armor", "all").filter {
+                    it.startsWith(
+                        builder.remaining,
+                        ignoreCase = true
+                    )
+                }.forEach { builder.suggest(it) }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                executeRepair(ctx.source.sender, player, StringArgumentType.getString(ctx, "scope"))
+            }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                it.sender.hasPermission("obsidian.command.repair.others") || it.sender.hasPermission(
+                    "obsidian.admin"
+                )
+            }.executes { ctx ->
+                val scope = StringArgumentType.getString(ctx, "scope")
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                executeRepair(ctx.source.sender, target, scope)
+            })).build()
         registrar.register(context.plugin.pluginMeta, node, "Repair damaged items", emptyList())
     }
 
@@ -314,8 +314,8 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                     return@executes 0
                 }
                 val currentHelmet = player.inventory.helmet
-                player.inventory.helmet = hand.clone()
-                player.inventory.itemInMainHand = currentHelmet
+                player.inventory.setHelmet(hand.clone())
+                player.inventory.setItemInMainHand(currentHelmet)
                 context.locale.send(player, "utility.hat-equipped")
                 Command.SINGLE_SUCCESS
             }.build()
@@ -348,45 +348,45 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         val ptimeNode = Commands.literal("ptime")
             .requires { it.sender.hasPermission("obsidian.command.ptime") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("value", StringArgumentType.word()).suggests { _, builder ->
-                    listOf("day", "noon", "sunset", "night", "midnight", "sunrise", "reset").filter {
-                            it.startsWith(
-                                builder.remaining,
-                                ignoreCase = true
-                            )
-                        }.forEach { builder.suggest(it) }
-                    builder.buildFuture()
-                }.executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    applyPTime(ctx.source.sender, player, StringArgumentType.getString(ctx, "value"))
-                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.ptime.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        applyPTime(ctx.source.sender, target, StringArgumentType.getString(ctx, "value"))
-                    })).build()
+                listOf("day", "noon", "sunset", "night", "midnight", "sunrise", "reset").filter {
+                    it.startsWith(
+                        builder.remaining,
+                        ignoreCase = true
+                    )
+                }.forEach { builder.suggest(it) }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                applyPTime(ctx.source.sender, player, StringArgumentType.getString(ctx, "value"))
+            }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                it.sender.hasPermission("obsidian.command.ptime.others") || it.sender.hasPermission(
+                    "obsidian.admin"
+                )
+            }.executes { ctx ->
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                applyPTime(ctx.source.sender, target, StringArgumentType.getString(ctx, "value"))
+            })).build()
         registrar.register(context.plugin.pluginMeta, ptimeNode, "Set personal player time", emptyList())
 
         val pweatherNode = Commands.literal("pweather")
             .requires { it.sender.hasPermission("obsidian.command.pweather") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("value", StringArgumentType.word()).suggests { _, builder ->
-                    listOf("sun", "rain", "reset").filter { it.startsWith(builder.remaining, ignoreCase = true) }
-                        .forEach { builder.suggest(it) }
-                    builder.buildFuture()
-                }.executes { ctx ->
-                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                    applyPWeather(ctx.source.sender, player, StringArgumentType.getString(ctx, "value"))
-                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.pweather.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        applyPWeather(ctx.source.sender, target, StringArgumentType.getString(ctx, "value"))
-                    })).build()
+                listOf("sun", "rain", "reset").filter { it.startsWith(builder.remaining, ignoreCase = true) }
+                    .forEach { builder.suggest(it) }
+                builder.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                applyPWeather(ctx.source.sender, player, StringArgumentType.getString(ctx, "value"))
+            }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                it.sender.hasPermission("obsidian.command.pweather.others") || it.sender.hasPermission(
+                    "obsidian.admin"
+                )
+            }.executes { ctx ->
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                applyPWeather(ctx.source.sender, target, StringArgumentType.getString(ctx, "value"))
+            })).build()
         registrar.register(context.plugin.pluginMeta, pweatherNode, "Set personal player weather", emptyList())
     }
 
@@ -415,7 +415,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             sender,
             "/pweather <sun|rain|reset> [player]"
         )
-        target.playerWeather = weather
+        target.setPlayerWeather(weather)
         context.locale.send(sender, "utility.pweather-set", "target" to target.name, "value" to value)
         return Command.SINGLE_SUCCESS
     }
@@ -425,34 +425,39 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.give") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("target", ArgumentTypes.player())
-                    .then(Commands.argument("item", ArgumentTypes.itemStack()).executes { ctx ->
+                    .then(
+                        Commands.argument("item", ArgumentTypes.itemStack()).executes { ctx ->
                             val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
                                 .resolve(ctx.source).firstOrNull() ?: return@executes 0
                             val stack = ctx.getArgument("item", ItemStack::class.java)
                             giveItem(ctx.source.sender, target, stack, 1)
                         }.then(
                             Commands.argument("amount", IntegerArgumentType.integer(1, 2304)).executes { ctx ->
-                                    val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                        .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                                    val stack = ctx.getArgument("item", ItemStack::class.java)
-                                    val amount = IntegerArgumentType.getInteger(ctx, "amount")
-                                    giveItem(ctx.source.sender, target, stack, amount)
-                                }))).build()
+                                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                                val stack = ctx.getArgument("item", ItemStack::class.java)
+                                val amount = IntegerArgumentType.getInteger(ctx, "amount")
+                                giveItem(ctx.source.sender, target, stack, amount)
+                            })
+                    )
+            ).build()
         registrar.register(context.plugin.pluginMeta, giveNode, "Give an item to a player", emptyList())
 
         val itemNode = Commands.literal("item")
             .requires { it.sender.hasPermission("obsidian.command.item") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("item", ArgumentTypes.itemStack()).executes { ctx ->
+            .then(
+                Commands.argument("item", ArgumentTypes.itemStack()).executes { ctx ->
                     val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                     val stack = ctx.getArgument("item", ItemStack::class.java)
                     giveItem(ctx.source.sender, player, stack, 1)
                 }.then(
                     Commands.argument("amount", IntegerArgumentType.integer(1, 2304)).executes { ctx ->
-                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                            val stack = ctx.getArgument("item", ItemStack::class.java)
-                            val amount = IntegerArgumentType.getInteger(ctx, "amount")
-                            giveItem(ctx.source.sender, player, stack, amount)
-                        })).build()
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val stack = ctx.getArgument("item", ItemStack::class.java)
+                        val amount = IntegerArgumentType.getInteger(ctx, "amount")
+                        giveItem(ctx.source.sender, player, stack, amount)
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta,
             itemNode,
@@ -485,21 +490,22 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.argument("target", ArgumentTypes.player()).then(
                     Commands.argument("command", StringArgumentType.greedyString()).executes { ctx ->
-                            val sender = ctx.source.sender
-                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                            val rawCmd = StringArgumentType.getString(ctx, "command").trim()
-                            if (rawCmd.startsWith("c:", ignoreCase = true)) {
-                                target.chat(rawCmd.substring(2))
-                            } else {
-                                val clean = rawCmd.removePrefix("/")
-                                Bukkit.dispatchCommand(target, clean)
-                            }
-                            context.locale.send(
-                                sender, "utility.sudo-executed", "target" to target.name, "command" to rawCmd
-                            )
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val sender = ctx.source.sender
+                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val rawCmd = StringArgumentType.getString(ctx, "command").trim()
+                        if (rawCmd.startsWith("c:", ignoreCase = true)) {
+                            target.chat(rawCmd.substring(2))
+                        } else {
+                            val clean = rawCmd.removePrefix("/")
+                            Bukkit.dispatchCommand(target, clean)
+                        }
+                        context.locale.send(
+                            sender, "utility.sudo-executed", "target" to target.name, "command" to rawCmd
+                        )
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta, sudoNode, "Force a player to execute a command or chat", emptyList()
         )

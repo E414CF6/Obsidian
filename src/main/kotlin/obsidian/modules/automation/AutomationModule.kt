@@ -74,57 +74,57 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.schedule") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.literal("list").executes { ctx ->
-                        val sender = ctx.source.sender
-                        val all = scheduleService.getAllJobs()
-                        if (all.isEmpty()) {
-                            context.locale.send(sender, "automation.schedule-empty")
-                            return@executes Command.SINGLE_SUCCESS
-                        }
-                        context.locale.send(sender, "automation.schedule-header", "count" to all.size)
-                        all.forEach { job ->
-                            val state = if (job.enabled) "<green>ON</green>" else "<red>OFF</red>"
-                            val timing = job.dailyAt?.let { "daily $it" } ?: "every ${job.intervalSeconds}s"
-                            sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${job.id}</aqua> [$state] <gray>($timing, ${job.commands.size} cmds)</gray>"))
-                        }
-                        Command.SINGLE_SUCCESS
-                    })
+                    val sender = ctx.source.sender
+                    val all = scheduleService.getAllJobs()
+                    if (all.isEmpty()) {
+                        context.locale.send(sender, "automation.schedule-empty")
+                        return@executes Command.SINGLE_SUCCESS
+                    }
+                    context.locale.send(sender, "automation.schedule-header", "count" to all.size)
+                    all.forEach { job ->
+                        val state = if (job.enabled) "<green>ON</green>" else "<red>OFF</red>"
+                        val timing = job.dailyAt?.let { "daily $it" } ?: "every ${job.intervalSeconds}s"
+                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${job.id}</aqua> [$state] <gray>($timing, ${job.commands.size} cmds)</gray>"))
+                    }
+                    Command.SINGLE_SUCCESS
+                })
             .then(Commands.literal("run").then(Commands.argument("id", StringArgumentType.word()).suggests { _, b ->
-                        scheduleService.getAllJobs().map { it.id }.forEach(b::suggest)
-                        b.buildFuture()
-                    }.executes { ctx ->
-                        val id = StringArgumentType.getString(ctx, "id")
-                        val job = scheduleService.getJob(id)
-                        if (job == null) {
-                            context.locale.send(ctx.source.sender, "automation.schedule-not-found", "id" to id)
-                            return@executes 0
-                        }
-                        scheduleService.runNow(job)
-                        context.locale.send(ctx.source.sender, "automation.schedule-ran", "id" to job.id)
-                        Command.SINGLE_SUCCESS
-                    }))
+                scheduleService.getAllJobs().map { it.id }.forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val id = StringArgumentType.getString(ctx, "id")
+                val job = scheduleService.getJob(id)
+                if (job == null) {
+                    context.locale.send(ctx.source.sender, "automation.schedule-not-found", "id" to id)
+                    return@executes 0
+                }
+                scheduleService.runNow(job)
+                context.locale.send(ctx.source.sender, "automation.schedule-ran", "id" to job.id)
+                Command.SINGLE_SUCCESS
+            }))
             .then(Commands.literal("toggle").then(Commands.argument("id", StringArgumentType.word()).suggests { _, b ->
-                        scheduleService.getAllJobs().map { it.id }.forEach(b::suggest)
-                        b.buildFuture()
-                    }.executes { ctx ->
-                        val id = StringArgumentType.getString(ctx, "id")
-                        val next = scheduleService.toggleJob(id)
-                        if (next == null) {
-                            context.locale.send(ctx.source.sender, "automation.schedule-not-found", "id" to id)
-                            return@executes 0
-                        }
-                        context.locale.send(
-                            ctx.source.sender,
-                            "automation.schedule-toggled",
-                            "id" to id,
-                            "state" to if (next) "ON" else "OFF"
-                        )
-                        Command.SINGLE_SUCCESS
-                    })).then(
+                scheduleService.getAllJobs().map { it.id }.forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val id = StringArgumentType.getString(ctx, "id")
+                val next = scheduleService.toggleJob(id)
+                if (next == null) {
+                    context.locale.send(ctx.source.sender, "automation.schedule-not-found", "id" to id)
+                    return@executes 0
+                }
+                context.locale.send(
+                    ctx.source.sender,
+                    "automation.schedule-toggled",
+                    "id" to id,
+                    "state" to if (next) "ON" else "OFF"
+                )
+                Command.SINGLE_SUCCESS
+            })).then(
                 Commands.literal("reload").executes { ctx ->
-                        scheduleService.reload()
-                        context.locale.send(ctx.source.sender, "automation.schedule-reloaded")
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    scheduleService.reload()
+                    context.locale.send(ctx.source.sender, "automation.schedule-reloaded")
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, node, "Manage automated schedules", emptyList())
     }
 
@@ -138,10 +138,10 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        afkService.setAfk(player, true, StringArgumentType.getString(ctx, "reason"))
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    afkService.setAfk(player, true, StringArgumentType.getString(ctx, "reason"))
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, node, "Toggle AFK status", emptyList())
     }
 
@@ -222,32 +222,32 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         val killAllNode = Commands.literal("killall")
             .requires { it.sender.hasPermission("obsidian.command.killall") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("filter", StringArgumentType.word()).suggests { _, b ->
-                    listOf("items", "monsters", "animals", "all").forEach(b::suggest)
-                    b.buildFuture()
-                }.executes { ctx ->
-                    val filter = StringArgumentType.getString(ctx, "filter").lowercase()
-                    var removed = 0
-                    for (world in Bukkit.getWorlds()) {
-                        for (entity in world.entities) {
-                            if (entity is Player) continue
-                            val match = when (filter) {
-                                "items" -> entity is Item
-                                "monsters", "hostile" -> entity is Monster
-                                "animals", "passive" -> entity is Animals
-                                "all" -> entity is Monster || entity is Animals || entity is Item
-                                else -> entity.type.name.equals(filter, ignoreCase = true)
-                            }
-                            if (match) {
-                                context.scheduler.runForEntity(entity) { entity.remove() }
-                                removed++
-                            }
+                listOf("items", "monsters", "animals", "all").forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val filter = StringArgumentType.getString(ctx, "filter").lowercase()
+                var removed = 0
+                for (world in Bukkit.getWorlds()) {
+                    for (entity in world.entities) {
+                        if (entity is Player) continue
+                        val match = when (filter) {
+                            "items" -> entity is Item
+                            "monsters", "hostile" -> entity is Monster
+                            "animals", "passive" -> entity is Animals
+                            "all" -> entity is Monster || entity is Animals || entity is Item
+                            else -> entity.type.name.equals(filter, ignoreCase = true)
+                        }
+                        if (match) {
+                            context.scheduler.runForEntity(entity) { entity.remove() }
+                            removed++
                         }
                     }
-                    context.locale.send(
-                        ctx.source.sender, "automation.killall-done", "count" to removed, "filter" to filter
-                    )
-                    Command.SINGLE_SUCCESS
-                }).build()
+                }
+                context.locale.send(
+                    ctx.source.sender, "automation.killall-done", "count" to removed, "filter" to filter
+                )
+                Command.SINGLE_SUCCESS
+            }).build()
         registrar.register(
             context.plugin.pluginMeta, killAllNode, "Remove filtered entities in loaded worlds", emptyList()
         )
@@ -259,45 +259,48 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.argument("target", ArgumentTypes.player()).then(
                     Commands.argument("permission", StringArgumentType.word()).executes { ctx ->
-                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                            val perm = StringArgumentType.getString(ctx, "permission")
-                            val has = target.hasPermission(perm)
-                            context.locale.send(
-                                ctx.source.sender,
-                                "automation.checkperm-result",
-                                "target" to target.name,
-                                "permission" to perm,
-                                "state" to if (has) "TRUE" else "FALSE",
-                            )
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val perm = StringArgumentType.getString(ctx, "permission")
+                        val has = target.hasPermission(perm)
+                        context.locale.send(
+                            ctx.source.sender,
+                            "automation.checkperm-result",
+                            "target" to target.name,
+                            "permission" to perm,
+                            "state" to if (has) "TRUE" else "FALSE",
+                        )
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta, checkPermNode, "Inspect an online player's permission value", emptyList()
         )
 
         val ifOnlineNode = Commands.literal("ifonline")
             .requires { it.sender.hasPermission("obsidian.command.ifonline") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("player", StringArgumentType.word()).suggests { ctx, b ->
+            .then(
+                Commands.argument("player", StringArgumentType.word()).suggests { ctx, b ->
                     CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
                     b.buildFuture()
                 }.then(
                     Commands.argument("command", StringArgumentType.greedyString()).executes { ctx ->
-                            val name = StringArgumentType.getString(ctx, "player")
-                            val online = Bukkit.getPlayerExact(name)
-                            val rawCmd = StringArgumentType.getString(ctx, "command")
-                            if (online != null && online.isOnline) {
-                                SpecializedCommandExecutor.executeAll(context, listOf(rawCmd), online)
-                                context.locale.send(
-                                    ctx.source.sender, "automation.condition-ran", "player" to online.name
-                                )
-                            } else {
-                                context.locale.send(
-                                    ctx.source.sender, "automation.condition-skipped", "player" to name
-                                )
-                            }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val name = StringArgumentType.getString(ctx, "player")
+                        val online = Bukkit.getPlayerExact(name)
+                        val rawCmd = StringArgumentType.getString(ctx, "command")
+                        if (online != null && online.isOnline) {
+                            SpecializedCommandExecutor.executeAll(context, listOf(rawCmd), online)
+                            context.locale.send(
+                                ctx.source.sender, "automation.condition-ran", "player" to online.name
+                            )
+                        } else {
+                            context.locale.send(
+                                ctx.source.sender, "automation.condition-skipped", "player" to name
+                            )
+                        }
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta, ifOnlineNode, "Execute a command only if player is online", emptyList()
         )
@@ -307,21 +310,22 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.argument("player", StringArgumentType.word()).then(
                     Commands.argument("command", StringArgumentType.greedyString()).executes { ctx ->
-                            val name = StringArgumentType.getString(ctx, "player")
-                            val online = Bukkit.getPlayerExact(name)
-                            val rawCmd = StringArgumentType.getString(ctx, "command")
-                            if (online == null || !online.isOnline) {
-                                SpecializedCommandExecutor.executeAll(
-                                    context, listOf(rawCmd), null, mapOf("player" to name)
-                                )
-                                context.locale.send(ctx.source.sender, "automation.condition-ran", "player" to name)
-                            } else {
-                                context.locale.send(
-                                    ctx.source.sender, "automation.condition-skipped", "player" to name
-                                )
-                            }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val name = StringArgumentType.getString(ctx, "player")
+                        val online = Bukkit.getPlayerExact(name)
+                        val rawCmd = StringArgumentType.getString(ctx, "command")
+                        if (online == null || !online.isOnline) {
+                            SpecializedCommandExecutor.executeAll(
+                                context, listOf(rawCmd), null, mapOf("player" to name)
+                            )
+                            context.locale.send(ctx.source.sender, "automation.condition-ran", "player" to name)
+                        } else {
+                            context.locale.send(
+                                ctx.source.sender, "automation.condition-skipped", "player" to name
+                            )
+                        }
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta, ifOfflineNode, "Execute a command only if player is offline", emptyList()
         )

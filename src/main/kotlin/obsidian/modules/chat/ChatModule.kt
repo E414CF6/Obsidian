@@ -66,13 +66,14 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .then(
                 Commands.argument("target", ArgumentTypes.player()).then(
                     Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                            val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                            val message = StringArgumentType.getString(ctx, "message")
-                            chatService.sendPrivateMessage(sender, target, message)
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val message = StringArgumentType.getString(ctx, "message")
+                        chatService.sendPrivateMessage(sender, target, message)
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(
             context.plugin.pluginMeta,
             msgNode,
@@ -84,15 +85,15 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.reply") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                        val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val target = chatService.getReplyTarget(sender.uniqueId)
-                        if (target == null || !target.isOnline) {
-                            context.locale.send(sender, "chat.no-reply-target")
-                            return@executes 0
-                        }
-                        chatService.sendPrivateMessage(sender, target, StringArgumentType.getString(ctx, "message"))
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val target = chatService.getReplyTarget(sender.uniqueId)
+                    if (target == null || !target.isOnline) {
+                        context.locale.send(sender, "chat.no-reply-target")
+                        return@executes 0
+                    }
+                    chatService.sendPrivateMessage(sender, target, StringArgumentType.getString(ctx, "message"))
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta,
             replyNode,
@@ -126,41 +127,41 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.nick") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.literal("off").executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    chatService.setNickname(player, null)
+                    context.locale.send(player, "chat.nick-cleared", "target" to player.name)
+                    Command.SINGLE_SUCCESS
+                }).then(
+                Commands.argument("nickname", StringArgumentType.greedyString()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val rawNick = StringArgumentType.getString(ctx, "nickname").trim()
+                    if (rawNick.equals("reset", ignoreCase = true) || rawNick.equals("clear", ignoreCase = true)) {
                         chatService.setNickname(player, null)
                         context.locale.send(player, "chat.nick-cleared", "target" to player.name)
-                        Command.SINGLE_SUCCESS
-                    }).then(
-                Commands.argument("nickname", StringArgumentType.greedyString()).executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val rawNick = StringArgumentType.getString(ctx, "nickname").trim()
-                        if (rawNick.equals("reset", ignoreCase = true) || rawNick.equals("clear", ignoreCase = true)) {
-                            chatService.setNickname(player, null)
-                            context.locale.send(player, "chat.nick-cleared", "target" to player.name)
-                        } else {
-                            chatService.setNickname(player, rawNick)
-                            context.locale.send(player, "chat.nick-set", "target" to player.name, "nick" to rawNick)
-                        }
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    } else {
+                        chatService.setNickname(player, rawNick)
+                        context.locale.send(player, "chat.nick-set", "target" to player.name, "nick" to rawNick)
+                    }
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, nickNode, "Change display nickname", emptyList())
 
         val realNameNode = Commands.literal("realname")
             .requires { it.sender.hasPermission("obsidian.command.realname") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("nickname", StringArgumentType.greedyString()).executes { ctx ->
-                        val sender = ctx.source.sender
-                        val query = StringArgumentType.getString(ctx, "nickname")
-                        val found = chatService.findByNickname(query)
-                        if (found == null) {
-                            context.locale.send(sender, "chat.realname-not-found", "nick" to query)
-                        } else {
-                            context.locale.send(
-                                sender, "chat.realname-result", "nick" to query, "realname" to found.name
-                            )
-                        }
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val sender = ctx.source.sender
+                    val query = StringArgumentType.getString(ctx, "nickname")
+                    val found = chatService.findByNickname(query)
+                    if (found == null) {
+                        context.locale.send(sender, "chat.realname-not-found", "nick" to query)
+                    } else {
+                        context.locale.send(
+                            sender, "chat.realname-result", "nick" to query, "realname" to found.name
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, realNameNode, "Find real player name by nickname", emptyList())
     }
 
@@ -205,18 +206,18 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.staffchat") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                        val sender = ctx.source.sender
-                        val msg = StringArgumentType.getString(ctx, "message")
-                        val comp = TextFormatter.format(
-                            chatService.staffChatFormat,
-                            mapOf("sender" to sender.name, "message" to msg),
-                        )
-                        Bukkit.getConsoleSender().sendMessage(comp)
-                        Bukkit.getOnlinePlayers()
-                            .filter { it.hasPermission("obsidian.staffchat") || it.hasPermission("obsidian.admin") }
-                            .forEach { it.sendMessage(comp) }
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val sender = ctx.source.sender
+                    val msg = StringArgumentType.getString(ctx, "message")
+                    val comp = TextFormatter.format(
+                        chatService.staffChatFormat,
+                        mapOf("sender" to sender.name, "message" to msg),
+                    )
+                    Bukkit.getConsoleSender().sendMessage(comp)
+                    Bukkit.getOnlinePlayers()
+                        .filter { it.hasPermission("obsidian.staffchat") || it.hasPermission("obsidian.admin") }
+                        .forEach { it.sendMessage(comp) }
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta,
             staffMsgNode,
@@ -228,19 +229,19 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.helpop") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                        val sender = ctx.source.sender
-                        val msg = StringArgumentType.getString(ctx, "message")
-                        val comp = TextFormatter.format(
-                            chatService.helpopFormat,
-                            mapOf("sender" to sender.name, "message" to msg),
-                        )
-                        Bukkit.getConsoleSender().sendMessage(comp)
-                        Bukkit.getOnlinePlayers()
-                            .filter { it.hasPermission("obsidian.staffchat") || it.hasPermission("obsidian.admin") }
-                            .forEach { it.sendMessage(comp) }
-                        context.locale.send(sender, "chat.helpop-sent")
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val sender = ctx.source.sender
+                    val msg = StringArgumentType.getString(ctx, "message")
+                    val comp = TextFormatter.format(
+                        chatService.helpopFormat,
+                        mapOf("sender" to sender.name, "message" to msg),
+                    )
+                    Bukkit.getConsoleSender().sendMessage(comp)
+                    Bukkit.getOnlinePlayers()
+                        .filter { it.hasPermission("obsidian.staffchat") || it.hasPermission("obsidian.admin") }
+                        .forEach { it.sendMessage(comp) }
+                    context.locale.send(sender, "chat.helpop-sent")
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(context.plugin.pluginMeta, helpOpNode, "Send a help request to online staff", emptyList())
     }
 
@@ -249,10 +250,10 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.broadcast") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                        val msg = StringArgumentType.getString(ctx, "message")
-                        Bukkit.broadcast(TextFormatter.format(chatService.broadcastFormat, mapOf("message" to msg)))
-                        Command.SINGLE_SUCCESS
-                    }).build()
+                    val msg = StringArgumentType.getString(ctx, "message")
+                    Bukkit.broadcast(TextFormatter.format(chatService.broadcastFormat, mapOf("message" to msg)))
+                    Command.SINGLE_SUCCESS
+                }).build()
         registrar.register(
             context.plugin.pluginMeta,
             bcNode,
@@ -262,66 +263,72 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
 
         val titleNode = Commands.literal("titlemsg")
             .requires { it.sender.hasPermission("obsidian.command.titlemsg") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+            .then(
+                Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
                     if ("all".startsWith(b.remaining, true)) b.suggest("all")
                     CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
                     b.buildFuture()
                 }.then(
                     Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                            val targetArg = StringArgumentType.getString(ctx, "target")
-                            val rawMsg = StringArgumentType.getString(ctx, "message")
-                            val parts = rawMsg.split("\\n", limit = 2)
-                            val titleComp = TextFormatter.format(parts[0])
-                            val subtitleComp = parts.getOrNull(1)?.let { TextFormatter.format(it) } ?: Component.empty()
-                            val titleObj = Title.title(
-                                titleComp,
-                                subtitleComp,
-                                Title.Times.times(
-                                    Duration.ofMillis(300), Duration.ofSeconds(3), Duration.ofMillis(500)
-                                ),
-                            )
-                            resolveAudiences(targetArg).forEach { it.showTitle(titleObj) }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val targetArg = StringArgumentType.getString(ctx, "target")
+                        val rawMsg = StringArgumentType.getString(ctx, "message")
+                        val parts = rawMsg.split("\\n", limit = 2)
+                        val titleComp = TextFormatter.format(parts[0])
+                        val subtitleComp = parts.getOrNull(1)?.let { TextFormatter.format(it) } ?: Component.empty()
+                        val titleObj = Title.title(
+                            titleComp,
+                            subtitleComp,
+                            Title.Times.times(
+                                Duration.ofMillis(300), Duration.ofSeconds(3), Duration.ofMillis(500)
+                            ),
+                        )
+                        resolveAudiences(targetArg).forEach { it.showTitle(titleObj) }
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(context.plugin.pluginMeta, titleNode, "Send a title message to a player or all", emptyList())
 
         val actionBarNode = Commands.literal("actionbarmsg")
             .requires { it.sender.hasPermission("obsidian.command.actionbarmsg") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+            .then(
+                Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
                     if ("all".startsWith(b.remaining, true)) b.suggest("all")
                     CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
                     b.buildFuture()
                 }.then(
                     Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
-                            val targetArg = StringArgumentType.getString(ctx, "target")
-                            val comp = TextFormatter.format(StringArgumentType.getString(ctx, "message"))
-                            resolveAudiences(targetArg).forEach { it.sendActionBar(comp) }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                        val targetArg = StringArgumentType.getString(ctx, "target")
+                        val comp = TextFormatter.format(StringArgumentType.getString(ctx, "message"))
+                        resolveAudiences(targetArg).forEach { it.sendActionBar(comp) }
+                        Command.SINGLE_SUCCESS
+                    })
+            ).build()
         registrar.register(context.plugin.pluginMeta, actionBarNode, "Send an actionbar message", emptyList())
     }
 
     private fun registerCustomText(registrar: Commands) {
         val ctextNode = Commands.literal("ctext")
             .requires { it.sender.hasPermission("obsidian.command.ctext") || it.sender.hasPermission("obsidian.admin") }
-            .then(Commands.argument("section", StringArgumentType.word()).suggests { _, b ->
-                    customTextService.getSectionNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
-                    b.buildFuture()
-                }.executes { ctx ->
+            .then(
+                Commands.argument("section", StringArgumentType.word()).suggests { _, b ->
+                customTextService.getSectionNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                b.buildFuture()
+            }.executes { ctx ->
+                val section = StringArgumentType.getString(ctx, "section")
+                if (!customTextService.sendSection(ctx.source.sender, section, 1)) {
+                    context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
+                }
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
                     val section = StringArgumentType.getString(ctx, "section")
-                    if (!customTextService.sendSection(ctx.source.sender, section, 1)) {
+                    val page = IntegerArgumentType.getInteger(ctx, "page")
+                    if (!customTextService.sendSection(ctx.source.sender, section, page)) {
                         context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
                     }
                     Command.SINGLE_SUCCESS
-                }.then(
-                    Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
-                            val section = StringArgumentType.getString(ctx, "section")
-                            val page = IntegerArgumentType.getInteger(ctx, "page")
-                            if (!customTextService.sendSection(ctx.source.sender, section, page)) {
-                                context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
-                            }
-                            Command.SINGLE_SUCCESS
-                        })).build()
+                })
+            ).build()
         registrar.register(context.plugin.pluginMeta, ctextNode, "Display paginated custom text sections", emptyList())
     }
 

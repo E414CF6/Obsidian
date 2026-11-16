@@ -62,28 +62,28 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
     override fun registerCommands(registrar: Commands) {
         val builder: (String) -> LiteralArgumentBuilder<CommandSourceStack> = { name ->
             Commands.literal(name).requires {
-                    it.sender.hasPermission("obsidian.protect.co") || it.sender.hasPermission("obsidian.admin")
-                }.executes { ctx ->
-                    sendHelp(ctx.source.sender, emptyList())
-                    Command.SINGLE_SUCCESS
-                }.then(Commands.argument("args", StringArgumentType.greedyString()).suggests { ctx, sb ->
-                        val input = sb.remainingLowerCase
-                        val parts = input.split(" ")
-                        if (parts.size <= 1) {
-                            subcommands.filter { it.startsWith(parts.firstOrNull().orEmpty()) }.forEach(sb::suggest)
-                        } else {
-                            suggestFilterTokens(ctx.source.sender, parts.last()).forEach { suggestion ->
-                                    val prefix = input.substringBeforeLast(' ', "")
-                                    sb.suggest(if (prefix.isEmpty()) suggestion else "$prefix $suggestion")
-                                }
-                        }
-                        sb.buildFuture()
-                    }.executes { ctx ->
-                        val raw = StringArgumentType.getString(ctx, "args")
-                        dispatchCommand(
-                            ctx.source.sender, raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
-                        Command.SINGLE_SUCCESS
-                    })
+                it.sender.hasPermission("obsidian.protect.co") || it.sender.hasPermission("obsidian.admin")
+            }.executes { ctx ->
+                sendHelp(ctx.source.sender, emptyList())
+                Command.SINGLE_SUCCESS
+            }.then(Commands.argument("args", StringArgumentType.greedyString()).suggests { ctx, sb ->
+                val input = sb.remainingLowerCase
+                val parts = input.split(" ")
+                if (parts.size <= 1) {
+                    subcommands.filter { it.startsWith(parts.firstOrNull().orEmpty()) }.forEach(sb::suggest)
+                } else {
+                    suggestFilterTokens(ctx.source.sender, parts.last()).forEach { suggestion ->
+                        val prefix = input.substringBeforeLast(' ', "")
+                        sb.suggest(if (prefix.isEmpty()) suggestion else "$prefix $suggestion")
+                    }
+                }
+                sb.buildFuture()
+            }.executes { ctx ->
+                val raw = StringArgumentType.getString(ctx, "args")
+                dispatchCommand(
+                    ctx.source.sender, raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() })
+                Command.SINGLE_SUCCESS
+            })
         }
 
         CommandHelper.registerWithOptionalAliases(
