@@ -214,11 +214,42 @@ object WorldDataReader {
         return PlayerSpecialty(key, title, domCategory, topKey, gathering, combat, misc)
     }
 
+    /**
+     * Resolves the level root directory from either a classic Bukkit world folder (`world/`)
+     * or a Paper 26.3+ dimension subfolder (`world/dimensions/<namespace>/<dimension>/`).
+     */
+    fun resolveLevelRoot(worldDir: Path?): Path? {
+        if (worldDir == null) return null
+        if (isLevelRoot(worldDir)) return worldDir
+
+        var current: Path? = worldDir.parent
+        repeat(4) {
+            if (current == null) return@repeat
+            if (isLevelRoot(current)) return current
+            current = current.parent
+        }
+        return worldDir
+    }
+
+    private fun isLevelRoot(dir: Path): Boolean =
+        Files.isDirectory(dir.resolve("stats")) ||
+                Files.isDirectory(dir.resolve("advancements")) ||
+                Files.isDirectory(dir.resolve("players")) ||
+                Files.isRegularFile(dir.resolve("level.dat"))
+
     private fun resolveUuidFile(worldDir: Path, subDir: String, uuid: String): Path? {
-        val primary = worldDir.resolve(subDir).resolve("$uuid.json")
-        if (Files.isRegularFile(primary)) return primary
-        val nested = worldDir.resolve("players").resolve(subDir).resolve("$uuid.json")
-        if (Files.isRegularFile(nested)) return nested
+        val levelRoot = resolveLevelRoot(worldDir)
+        val candidates = if (levelRoot != null && levelRoot != worldDir) {
+            listOf(worldDir, levelRoot)
+        } else {
+            listOf(worldDir)
+        }
+        for (base in candidates) {
+            val primary = base.resolve(subDir).resolve("$uuid.json")
+            if (Files.isRegularFile(primary)) return primary
+            val nested = base.resolve("players").resolve(subDir).resolve("$uuid.json")
+            if (Files.isRegularFile(nested)) return nested
+        }
         return null
     }
 

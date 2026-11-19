@@ -92,6 +92,36 @@ class StatsModuleTest {
     }
 
     @Test
+    fun `world data reader resolves level root from Paper 26_3 dimension subfolder`(@TempDir tempDir: Path) {
+        val levelRoot = tempDir.resolve("world")
+        val overworldDir = levelRoot.resolve("dimensions").resolve("minecraft").resolve("overworld")
+        val statsDir = levelRoot.resolve("stats")
+        val advDir = levelRoot.resolve("players").resolve("advancements")
+        Files.createDirectories(overworldDir)
+        Files.createDirectories(statsDir)
+        Files.createDirectories(advDir)
+        Files.writeString(levelRoot.resolve("level.dat"), "")
+
+        val uuid = UUID.randomUUID().toString()
+        Files.writeString(
+            statsDir.resolve("$uuid.json"),
+            """{"stats":{"minecraft:mined":{"minecraft:stone":15},"minecraft:custom":{"minecraft:walk_one_cm":400}}}""",
+        )
+        Files.writeString(
+            advDir.resolve("$uuid.json"),
+            """{"minecraft:story/root":{"done":true,"criteria":{"crafting_table":"2026-11-19 10:00:00 +0900"}}}""",
+        )
+
+        assertEquals(levelRoot, WorldDataReader.resolveLevelRoot(overworldDir))
+        val vanilla = WorldDataReader.readVanillaStats(overworldDir, uuid)
+        assertEquals(15L, vanilla.totalMined)
+        assertEquals(400L, vanilla.totalDistanceCm)
+
+        val adv = WorldDataReader.readAdvancements(overworldDir, uuid)
+        assertEquals(1L, adv.totalCompleted)
+    }
+
+    @Test
     fun `rsa auth generates pem keys and validates signed payloads`(@TempDir tempDir: Path) {
         val keysDir = tempDir.resolve("keys")
         val auth = RsaAuthService(keysDir, maxClockSkewSeconds = 60L)

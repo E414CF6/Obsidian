@@ -562,8 +562,15 @@ class StatsAggregatorService(
 
         private fun resolveDefaultWorldDir(): Path? {
             return runCatching {
-                val primary = Bukkit.getWorlds().firstOrNull()?.worldFolder?.toPath()
-                if (primary != null && Files.isDirectory(primary)) primary else null
+                val primaryWorld = Bukkit.getWorlds().firstOrNull()
+                val folder = primaryWorld?.worldFolder?.toPath()?.takeIf { Files.isDirectory(it) }
+                val resolved = WorldDataReader.resolveLevelRoot(folder)
+                if (resolved != null && Files.isDirectory(resolved)) {
+                    resolved
+                } else {
+                    val byName = primaryWorld?.name?.let { Bukkit.getWorldContainer().toPath().resolve(it) }
+                    if (byName != null && Files.isDirectory(byName)) byName else folder
+                }
             }.getOrNull()
         }
 
