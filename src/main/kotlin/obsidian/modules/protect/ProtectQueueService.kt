@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Lock-free asynchronous consumer queue modeled after CoreProtect's Consumer pipeline.
+ * Lock-free asynchronous consumer queue modeled after Consumer pipeline.
  * Events enqueue records with zero main-thread I/O and flush in batches to [ProtectRepository].
  */
 class ProtectQueueService(

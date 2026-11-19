@@ -7,7 +7,7 @@ import java.sql.ResultSet
 import java.sql.Types
 
 /**
- * JDBC persistence repository for CoreProtect-style audit tables (`protect_blocks`,
+ * JDBC persistence repository for audit tables (`protect_blocks`,
  * `protect_containers`, `protect_entities`, `protect_messages`).
  */
 class ProtectRepository(private val db: DatabaseManager) {

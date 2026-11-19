@@ -3,7 +3,7 @@ package obsidian.modules.protect
 import java.util.*
 
 /**
- * CoreProtect-compatible parameter parser (`u:`, `-u:`, `t:`, `r:`, `a:`, `i:`, `e:`, `f:`, `#flags`).
+ * Parameter parser (`u:`, `-u:`, `t:`, `r:`, `a:`, `i:`, `e:`, `f:`, `#flags`).
  * Pure logic with zero Bukkit runtime dependency for deterministic unit testing.
  */
 object ProtectCommandParser {
@@ -11,7 +11,7 @@ object ProtectCommandParser {
     private val DURATION_TOKEN = Regex("(\\d+(?:\\.\\d+)?)(mo|y|w|d|h|m|s)")
 
     /**
-     * Parses compound CoreProtect duration strings such as `30m`, `1d12h`, `2w`, `1y3mo`.
+     * Parses compound duration strings such as `30m`, `1d12h`, `2w`, `1y3mo`.
      * Returns duration in milliseconds, or `null` if invalid.
      */
     fun parseDurationMillis(raw: String): Long? {
