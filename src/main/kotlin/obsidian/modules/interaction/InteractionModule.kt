@@ -26,25 +26,31 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
     val seatService = SeatAndPoseService(context)
     val icService = InteractiveCommandService(context)
     val attachedService = AttachedCommandService(context)
+    val armorEffectService = ArmorEffectService(context)
 
     override fun onEnable() {
         context.registerService(seatService)
         context.registerService(icService)
         context.registerService(attachedService)
+        context.registerService(armorEffectService)
+        armorEffectService.start()
     }
 
     override fun onDisable() {
         seatService.shutdownAll()
+        armorEffectService.stop()
     }
 
     override fun onReload() {
         icService.reload()
+        armorEffectService.reload()
     }
 
     override fun listeners(): List<Listener> = listOf(
         seatService,
         icService,
         attachedService,
+        armorEffectService,
     )
 
     override fun registerCommands(registrar: Commands) {
@@ -52,6 +58,7 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
         registerAppearanceCommands(registrar)
         registerInteractiveCommands(registrar)
         registerAttachedCommands(registrar)
+        registerArmorEffectsCommands(registrar)
     }
 
     private fun registerSitAndRide(registrar: Commands) {
@@ -311,6 +318,24 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
             node,
             "Attach commands to the held item via PDC",
             if (context.config.registerStandaloneAliases) listOf("ac", "attachcmd") else emptyList(),
+        )
+    }
+
+    private fun registerArmorEffectsCommands(registrar: Commands) {
+        val node = Commands.literal("armoreffects")
+            .requires { it.sender.hasPermission("obsidian.command.armoreffects") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("reload").executes { ctx ->
+                    armorEffectService.reload()
+                    context.locale.send(ctx.source.sender, "interaction.armoreffects-reloaded")
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            node,
+            "Manage armor effect rules",
+            listOf("armoreffect"),
         )
     }
 }

@@ -15,12 +15,15 @@ import obsidian.core.text.TextFormatter
 import obsidian.integration.PlaceholderService
 import obsidian.modules.moderation.ModerationService
 import org.bukkit.Bukkit
+import org.bukkit.Sound
+import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,6 +38,9 @@ class ChatService(
 
     private val profiles = ConcurrentHashMap<UUID, ChatProfileRecord>()
     private val lastMessagedBy = ConcurrentHashMap<UUID, UUID>()
+    private val ignoreFile = File(context.plugin.dataFolder, "ignores.yml")
+    private val ignoredPlayers = ConcurrentHashMap<UUID, MutableSet<UUID>>()
+    private val mentionRegex = Regex("@([A-Za-z0-9_]{3,16})")
 
     @Volatile
     var globalChatMuted: Boolean = false
@@ -75,6 +81,53 @@ class ChatService(
         staffChatFormat = raw.getString("chat.staffchat-format", staffChatFormat) ?: staffChatFormat
         helpopFormat = raw.getString("chat.helpop-format", helpopFormat) ?: helpopFormat
         broadcastFormat = raw.getString("chat.broadcast-format", broadcastFormat) ?: broadcastFormat
+        loadIgnores()
+    }
+
+    private fun loadIgnores() {
+        ignoredPlayers.clear()
+        if (!ignoreFile.exists()) return
+        val yaml = YamlConfiguration.loadConfiguration(ignoreFile)
+        val section = yaml.getConfigurationSection("ignores") ?: return
+        for (ownerStr in section.getKeys(false)) {
+            val owner = runCatching { UUID.fromString(ownerStr) }.getOrNull() ?: continue
+            val set = ConcurrentHashMap.newKeySet<UUID>()
+            for (targetStr in section.getStringList(ownerStr)) {
+                runCatching { UUID.fromString(targetStr) }.getOrNull()?.let { set += it }
+            }
+            if (set.isNotEmpty()) ignoredPlayers[owner] = set
+        }
+    }
+
+    private fun saveIgnoresAsync() {
+        val snapshot = ignoredPlayers.mapValues { (_, set) -> set.map { it.toString() } }
+        context.scheduler.runAsync {
+            val yaml = YamlConfiguration()
+            for ((owner, targets) in snapshot) {
+                if (targets.isNotEmpty()) yaml.set("ignores.$owner", targets)
+            }
+            runCatching {
+                ignoreFile.parentFile?.mkdirs()
+                yaml.save(ignoreFile)
+            }
+        }
+    }
+
+    fun isIgnoring(owner: UUID, target: UUID): Boolean = ignoredPlayers[owner]?.contains(target) == true
+
+    fun getIgnored(owner: UUID): Set<UUID> = ignoredPlayers[owner]?.toSet() ?: emptySet()
+
+    fun toggleIgnore(owner: UUID, target: UUID): Boolean {
+        val set = ignoredPlayers.computeIfAbsent(owner) { ConcurrentHashMap.newKeySet() }
+        val added = if (set.contains(target)) {
+            set.remove(target)
+            false
+        } else {
+            set.add(target)
+            true
+        }
+        saveIgnoresAsync()
+        return added
     }
 
     fun getProfile(uuid: UUID): ChatProfileRecord = profiles.computeIfAbsent(uuid) { ChatProfileRecord(uuid = uuid) }
@@ -125,7 +178,7 @@ class ChatService(
     fun sendPrivateMessage(sender: Player, target: Player, message: String) {
         val mod = context.getService<ModerationService>()
         val mute = mod?.getActiveMute(sender.uniqueId)
-        if (mute != null && mute.type == PunishmentType.MUTE) {
+        if (mute != null && (mute.type == PunishmentType.MUTE || mute.type == PunishmentType.IP_MUTE)) {
             context.locale.send(
                 sender,
                 "moderation.muted-chat-blocked",
@@ -137,6 +190,14 @@ class ChatService(
         val targetProfile = getProfile(target.uniqueId)
         if (!targetProfile.msgToggle && !sender.hasPermission("obsidian.admin")) {
             context.locale.send(sender, "chat.msg-disabled-target", "target" to target.name)
+            return
+        }
+        if (isIgnoring(
+                target.uniqueId,
+                sender.uniqueId
+            ) && !sender.hasPermission("obsidian.ignore.bypass") && !sender.hasPermission("obsidian.admin")
+        ) {
+            context.locale.send(sender, "chat.ignored-by-target", "target" to target.name)
             return
         }
 
@@ -226,7 +287,44 @@ class ChatService(
         }
 
         val canColor = player.hasPermission("obsidian.chat.color") || player.hasPermission("obsidian.admin")
-        val messageComp = if (canColor) TextFormatter.format(filteredText) else Component.text(filteredText)
+        var displayText = filteredText
+
+        // Remove viewers who ignore the sender (unless shadow-muted already filtered)
+        if (!player.hasPermission("obsidian.ignore.bypass") && !player.hasPermission("obsidian.admin")) {
+            event.viewers().removeIf { viewer ->
+                viewer is Player && viewer.uniqueId != player.uniqueId && isIgnoring(viewer.uniqueId, player.uniqueId)
+            }
+        }
+
+        // ChatTag (@player mention ping)
+        if ((mute == null || mute.type != PunishmentType.SHADOW_MUTE) &&
+            (player.hasPermission("obsidian.chat.tag") || player.hasPermission("obsidian.admin"))
+        ) {
+            val mentioned = mutableSetOf<Player>()
+            displayText = mentionRegex.replace(displayText) { match ->
+                val name = match.groupValues[1]
+                val target = Bukkit.getPlayerExact(name)
+                if (target != null && target.isOnline && target.uniqueId != player.uniqueId && !isIgnoring(
+                        target.uniqueId,
+                        player.uniqueId
+                    )
+                ) {
+                    mentioned += target
+                    if (canColor) "<aqua>@${target.name}</aqua>" else "@${target.name}"
+                } else {
+                    match.value
+                }
+            }
+            for (target in mentioned) {
+                context.scheduler.runForEntity(target) {
+                    if (target.isOnline) {
+                        target.playSound(target.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8f, 1.2f)
+                    }
+                }
+            }
+        }
+
+        val messageComp = if (canColor) TextFormatter.format(displayText) else Component.text(displayText)
         val placeholders = context.getService<PlaceholderService>()
 
         val hoverComp = if (hoverLines.isNotEmpty()) {

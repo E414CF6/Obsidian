@@ -1,6 +1,7 @@
 package obsidian.modules.automation
 
 import com.mojang.brigadier.Command
+import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import io.papermc.paper.command.brigadier.Commands
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes
@@ -35,6 +36,8 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
     val afkService = AfkService(context)
     val discordService = DiscordWebhookService(context)
     val luckPermsHook = LuckPermsHook()
+    val aliasAndCostService = AliasAndCostService(context)
+    val mobFarmLimiterService = MobFarmLimiterService(context)
 
     override fun onEnable() {
         context.registerService(scheduleService)
@@ -42,6 +45,8 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         context.registerService(afkService)
         context.registerService(discordService)
         context.registerService(luckPermsHook)
+        context.registerService(aliasAndCostService)
+        context.registerService(mobFarmLimiterService)
     }
 
     override fun onDisable() {
@@ -54,11 +59,15 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         eventActionService.reload()
         afkService.reload()
         discordService.reload()
+        aliasAndCostService.reload()
+        mobFarmLimiterService.reload()
     }
 
     override fun listeners(): List<Listener> = listOf(
         eventActionService,
         afkService,
+        aliasAndCostService,
+        mobFarmLimiterService,
     )
 
     override fun registerCommands(registrar: Commands) {
@@ -67,6 +76,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         registerStatusCommand(registrar)
         registerCleanupCommands(registrar)
         registerConditionalAndPermCommands(registrar)
+        registerAliasEditor(registrar)
     }
 
     private fun registerScheduleCommands(registrar: Commands) {
@@ -251,6 +261,80 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         registrar.register(
             context.plugin.pluginMeta, killAllNode, "Remove filtered entities in loaded worlds", emptyList()
         )
+
+        val mobCleanNode = Commands.literal("mobclean")
+            .requires { it.sender.hasPermission("obsidian.command.mobclean") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val chunk = player.location.chunk
+                val count = mobFarmLimiterService.cleanChunk(chunk)
+                context.locale.send(player, "automation.mobclean-done", "count" to count)
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("radius", IntegerArgumentType.integer(1, 5)).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val radius = IntegerArgumentType.getInteger(ctx, "radius")
+                    val pChunk = player.location.chunk
+                    val world = player.world
+                    for (dx in -radius..radius) {
+                        for (dz in -radius..radius) {
+                            val chunk = world.getChunkAt(pChunk.x + dx, pChunk.z + dz)
+                            val centerBlock = chunk.getBlock(
+                                8,
+                                player.location.blockY.coerceIn(world.minHeight, world.maxHeight - 1),
+                                8
+                            )
+                            context.scheduler.runForLocation(centerBlock.location) {
+                                mobFarmLimiterService.cleanChunk(chunk)
+                            }
+                        }
+                    }
+                    context.locale.send(player, "automation.mobclean-radius-scheduled", "radius" to radius)
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            mobCleanNode,
+            "Cull excess mobs in current or surrounding chunks based on farm limits",
+            listOf("mfmclean", "cleanmobs"),
+        )
+
+        val mobReportNode = Commands.literal("mobreport")
+            .requires { it.sender.hasPermission("obsidian.command.mobreport") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                val list = mobFarmLimiterService.getTopDenseChunks(world, 10)
+                if (list.isEmpty()) {
+                    context.locale.send(sender, "automation.mobreport-empty")
+                    return@executes 0
+                }
+                context.locale.send(sender, "automation.mobreport-header", "world" to world.name)
+                for (chunk in list) {
+                    val blockX = chunk.chunkX * 16 + 8
+                    val blockZ = chunk.chunkZ * 16 + 8
+                    context.locale.send(
+                        sender,
+                        "automation.mobreport-entry",
+                        "world" to chunk.worldName,
+                        "chunkX" to chunk.chunkX,
+                        "chunkZ" to chunk.chunkZ,
+                        "x" to blockX,
+                        "z" to blockZ,
+                        "total" to chunk.totalCount,
+                        "monsters" to chunk.monsterCount,
+                        "animals" to chunk.animalCount,
+                    )
+                }
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            mobReportNode,
+            "Report top densest mob chunks causing potential lag",
+            listOf("mfmreport", "lagchunks"),
+        )
     }
 
     private fun registerConditionalAndPermCommands(registrar: Commands) {
@@ -328,6 +412,73 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             ).build()
         registrar.register(
             context.plugin.pluginMeta, ifOfflineNode, "Execute a command only if player is offline", emptyList()
+        )
+    }
+
+    private fun registerAliasEditor(registrar: Commands) {
+        val node = Commands.literal("aliaseditor")
+            .requires { it.sender.hasPermission("obsidian.command.aliaseditor") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("list").executes { ctx ->
+                val all = aliasAndCostService.getAliases()
+                if (all.isEmpty()) {
+                    context.locale.send(ctx.source.sender, "automation.alias-empty")
+                } else {
+                    context.locale.send(ctx.source.sender, "automation.alias-header", "count" to all.size)
+                    for ((name, cmds) in all) {
+                        ctx.source.sender.sendMessage(
+                            TextFormatter.format(
+                                "<gray>-</gray> <aqua>/$name</aqua> <dark_gray>→</dark_gray> <white>${
+                                    cmds.joinToString(
+                                        " && "
+                                    )
+                                }</white>"
+                            )
+                        )
+                    }
+                }
+                Command.SINGLE_SUCCESS
+            })
+            .then(
+                Commands.literal("create").then(
+                    Commands.argument("name", StringArgumentType.word()).then(
+                        Commands.argument("action", StringArgumentType.greedyString()).executes { ctx ->
+                            val name = StringArgumentType.getString(ctx, "name")
+                            val action = StringArgumentType.getString(ctx, "action")
+                            aliasAndCostService.setAlias(name, listOf(action))
+                            context.locale.send(
+                                ctx.source.sender,
+                                "automation.alias-created",
+                                "name" to name,
+                                "action" to action
+                            )
+                            Command.SINGLE_SUCCESS
+                        }
+                    )
+                ))
+            .then(
+                Commands.literal("delete").then(
+                    Commands.argument("name", StringArgumentType.word()).suggests { _, b ->
+                        aliasAndCostService.getAliases().keys.filter { it.startsWith(b.remaining, true) }
+                            .forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val name = StringArgumentType.getString(ctx, "name")
+                        if (aliasAndCostService.removeAlias(name)) {
+                            context.locale.send(ctx.source.sender, "automation.alias-deleted", "name" to name)
+                            Command.SINGLE_SUCCESS
+                        } else {
+                            context.locale.send(ctx.source.sender, "automation.alias-not-found", "name" to name)
+                            0
+                        }
+                    }
+                ))
+            .build()
+
+        registrar.register(
+            context.plugin.pluginMeta,
+            node,
+            "Manage custom command aliases",
+            if (context.config.registerStandaloneAliases) listOf("alias") else emptyList(),
         )
     }
 }

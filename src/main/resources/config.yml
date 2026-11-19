@@ -139,9 +139,39 @@ moderation:
     - back
     - dback
     - rt
+  mute-blocked-commands:
+    - msg
+    - tell
+    - w
+    - reply
+    - r
+    - me
+    - say
   vanish:
     night-vision: true
     silent-chest: true
+  silent-by-default: false
+  punish-ip: false
+  require-ban-mute-reason: false
+  require-kick-reason: false
+  require-unban-unmute-reason: false
+  cooldown-seconds: 5
+  exempt:
+    enabled: true
+    use-group-weights: false
+    permit-same-weight: true
+    allow-bypass: false
+    exempt-players: [ ]
+  notify:
+    banned-player-join: true
+    muted-player-chat: true
+    dupeip-on-join: true
+    dupeip-scan-limit: 20
+    dupeip-scan-filter-duration: "7d"
+    dupeip-on-banned-account: true
+    dupeip-on-muted-account: false
+    dupeip-on-join-threshold: 5
+    throttle-seconds: 60
 
 chat:
   format: "<gray>[<aqua>{rank}</aqua>]</gray> {prefix}<white>{displayname}</white>{suffix} <dark_gray>»</dark_gray> <gray>{message}</gray>"
@@ -245,3 +275,15 @@ stats:
     clock-skew-seconds: 300
     keys-dir: "keys"
     api-key: ""
+
+spawners:
+  egg-interact-require-permission: true
+
+automation:
+  mobfarm:
+    enabled: true
+    chunk-monster-limit: 30
+    chunk-animal-limit: 30
+    chunk-total-limit: 50
+    exempt-named: true
+    exempt-tamed: true

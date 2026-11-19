@@ -31,13 +31,21 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
     val tabListService = TabListService(context)
     val deathMessageService = DeathMessageService(context)
     val customTextService = CustomTextService(context)
+    val mailService = MailService(context)
+    val notificationService = NotificationService(context)
 
     override fun onEnable() {
         context.registerService(chatService)
+        context.registerService(notificationService)
+        mailService.load()
         val interval = tabListService.updateIntervalSeconds
         context.scheduler.runGlobalTimer(interval, interval) {
             tabListService.updateAll()
         }
+    }
+
+    override fun onDisable() {
+        mailService.save()
     }
 
     override fun onReload() {
@@ -46,18 +54,21 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
         tabListService.reload()
         deathMessageService.reload()
         customTextService.reload()
+        mailService.load()
         tabListService.updateAll()
     }
 
-    override fun listeners(): List<Listener> = listOf(chatService, tabListService, deathMessageService)
+    override fun listeners(): List<Listener> = listOf(chatService, tabListService, deathMessageService, mailService)
 
     override fun registerCommands(registrar: Commands) {
         registerPrivateMessaging(registrar)
+        registerMailAndIgnore(registrar)
         registerNickCommands(registrar)
         registerChatControlCommands(registrar)
         registerStaffAndHelpOp(registrar)
         registerAnnouncementCommands(registrar)
         registerCustomText(registrar)
+        registerNotifications(registrar)
     }
 
     private fun registerPrivateMessaging(registrar: Commands) {
@@ -311,23 +322,23 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             .requires { it.sender.hasPermission("obsidian.command.ctext") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("section", StringArgumentType.word()).suggests { _, b ->
-                customTextService.getSectionNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
-                b.buildFuture()
-            }.executes { ctx ->
-                val section = StringArgumentType.getString(ctx, "section")
-                if (!customTextService.sendSection(ctx.source.sender, section, 1)) {
-                    context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
-                }
-                Command.SINGLE_SUCCESS
-            }.then(
-                Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
+                    customTextService.getSectionNames().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
                     val section = StringArgumentType.getString(ctx, "section")
-                    val page = IntegerArgumentType.getInteger(ctx, "page")
-                    if (!customTextService.sendSection(ctx.source.sender, section, page)) {
+                    if (!customTextService.sendSection(ctx.source.sender, section, 1)) {
                         context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
                     }
                     Command.SINGLE_SUCCESS
-                })
+                }.then(
+                    Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
+                        val section = StringArgumentType.getString(ctx, "section")
+                        val page = IntegerArgumentType.getInteger(ctx, "page")
+                        if (!customTextService.sendSection(ctx.source.sender, section, page)) {
+                            context.locale.send(ctx.source.sender, "chat.ctext-not-found", "name" to section)
+                        }
+                        Command.SINGLE_SUCCESS
+                    })
             ).build()
         registrar.register(context.plugin.pluginMeta, ctextNode, "Display paginated custom text sections", emptyList())
     }
@@ -337,5 +348,288 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             return Bukkit.getOnlinePlayers()
         }
         return listOfNotNull(Bukkit.getPlayerExact(targetArg) ?: Bukkit.getPlayer(targetArg))
+    }
+
+    private fun registerMailAndIgnore(registrar: Commands) {
+        // /mail <read|clear|send>
+        val mailNode = Commands.literal("mail")
+            .requires { it.sender.hasPermission("obsidian.command.mail") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("read")
+                    .requires {
+                        it.sender.hasPermission("obsidian.command.mail.read") || it.sender.hasPermission("obsidian.command.mail") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }
+                    .executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val entries = mailService.readMail(player.uniqueId)
+                        if (entries.isEmpty()) {
+                            context.locale.send(player, "chat.mail-empty")
+                        } else {
+                            context.locale.send(player, "chat.mail-header", "count" to entries.size)
+                            for (entry in entries) {
+                                val badge = if (entry.read) "<gray>" else "<gold>[NEW] "
+                                player.sendMessage(
+                                    TextFormatter.format(
+                                        "$badge<aqua>${entry.sender}</aqua> <dark_gray>(${
+                                            mailService.formatTimestamp(
+                                                entry.timestamp
+                                            )
+                                        })</dark_gray><gray>: <white>${entry.message}</white>"
+                                    )
+                                )
+                            }
+                        }
+                        Command.SINGLE_SUCCESS
+                    })
+            .then(
+                Commands.literal("clear")
+                    .requires {
+                        it.sender.hasPermission("obsidian.command.mail.clear") || it.sender.hasPermission("obsidian.command.mail") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }
+                    .executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val removed = mailService.clearMail(player.uniqueId)
+                        context.locale.send(player, "chat.mail-cleared", "count" to removed)
+                        Command.SINGLE_SUCCESS
+                    })
+            .then(
+                Commands.literal("send")
+                    .requires {
+                        it.sender.hasPermission("obsidian.command.mail.send") || it.sender.hasPermission("obsidian.command.mail") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }
+                    .then(Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                        Bukkit.getOnlinePlayers().map { it.name }.filter { it.startsWith(b.remaining, true) }
+                            .forEach { b.suggest(it) }
+                        b.buildFuture()
+                    }.then(Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                        val sender = ctx.source.sender
+                        val targetName = StringArgumentType.getString(ctx, "target")
+                        val message = StringArgumentType.getString(ctx, "message")
+                        val target = Bukkit.getPlayerExact(targetName) ?: Bukkit.getOfflinePlayerIfCached(targetName)
+                        ?: run {
+                            context.locale.send(sender, "general.player-not-found", "player" to targetName)
+                            return@executes 0
+                        }
+                        mailService.sendMail(target.uniqueId, sender.name, message)
+                        context.locale.send(sender, "chat.mail-sent", "target" to (target.name ?: targetName))
+                        Command.SINGLE_SUCCESS
+                    }))
+            )
+            .build()
+        registrar.register(context.plugin.pluginMeta, mailNode, "Send and read player mail", emptyList())
+
+        // /mailall <message>
+        val mailAllNode = Commands.literal("mailall")
+            .requires { it.sender.hasPermission("obsidian.command.mailall") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                val message = StringArgumentType.getString(ctx, "message")
+                val count = mailService.sendMailAll(ctx.source.sender.name, message)
+                context.locale.send(ctx.source.sender, "chat.mailall-sent", "count" to count)
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, mailAllNode, "Send mail to all known players", emptyList())
+
+        // /ignore [player|list]
+        val ignoreNode = Commands.literal("ignore")
+            .requires { it.sender.hasPermission("obsidian.command.ignore") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("list").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val ignored = chatService.getIgnored(player.uniqueId)
+                if (ignored.isEmpty()) {
+                    context.locale.send(player, "chat.ignore-empty")
+                } else {
+                    val names = ignored.map { Bukkit.getOfflinePlayer(it).name ?: it.toString() }.joinToString(", ")
+                    context.locale.send(player, "chat.ignore-list", "players" to names)
+                }
+                Command.SINGLE_SUCCESS
+            })
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                Bukkit.getOnlinePlayers().map { it.name }.filter { it.startsWith(b.remaining, true) }
+                    .forEach { b.suggest(it) }
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val targetName = StringArgumentType.getString(ctx, "target")
+                val target = Bukkit.getPlayerExact(targetName) ?: Bukkit.getOfflinePlayerIfCached(targetName)
+                ?: run {
+                    context.locale.send(player, "general.player-not-found", "player" to targetName)
+                    return@executes 0
+                }
+                if (target.uniqueId == player.uniqueId) {
+                    context.locale.send(player, "chat.ignore-self")
+                    return@executes 0
+                }
+                val added = chatService.toggleIgnore(player.uniqueId, target.uniqueId)
+                val key = if (added) "chat.ignore-added" else "chat.ignore-removed"
+                context.locale.send(player, key, "target" to (target.name ?: targetName))
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, ignoreNode, "Ignore or unignore a player", emptyList())
+    }
+
+    private fun registerNotifications(registrar: Commands) {
+        // /toast <target|all> <message>
+        val toastNode = Commands.literal("toast")
+            .requires { it.sender.hasPermission("obsidian.command.toast") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                (listOf("all") + Bukkit.getOnlinePlayers().map { it.name }).filter { it.startsWith(b.remaining, true) }
+                    .forEach(b::suggest)
+                b.buildFuture()
+            }.then(Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                val targetStr = StringArgumentType.getString(ctx, "target")
+                val rawMsg = StringArgumentType.getString(ctx, "message")
+                val targets = resolveAudiences(targetStr)
+                if (targets.isEmpty()) {
+                    context.locale.send(ctx.source.sender, "general.player-not-found", "player" to targetStr)
+                    return@executes 0
+                }
+
+                var icon = org.bukkit.Material.PAPER
+                var frame = "task"
+                val tokens = rawMsg.split(" ")
+                val cleanTokens = mutableListOf<String>()
+                for (t in tokens) {
+                    if (t.startsWith("-icon:")) {
+                        icon =
+                            org.bukkit.Material.matchMaterial(t.substring("-icon:".length)) ?: org.bukkit.Material.PAPER
+                    } else if (t.startsWith("-t:")) {
+                        frame = t.substring("-t:".length)
+                    } else {
+                        cleanTokens += t
+                    }
+                }
+                val msg = cleanTokens.joinToString(" ")
+                notificationService.sendToast(targets, icon, msg, frame)
+                Command.SINGLE_SUCCESS
+            })).build()
+        registrar.register(context.plugin.pluginMeta, toastNode, "Send advancement toast notification", emptyList())
+
+        // /bossbarmsg <target|all> <seconds> <message>
+        val bossbarNode = Commands.literal("bossbarmsg")
+            .requires { it.sender.hasPermission("obsidian.command.bossbarmsg") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                    (listOf("all") + Bukkit.getOnlinePlayers().map { it.name }).filter {
+                        it.startsWith(
+                            b.remaining,
+                            true
+                        )
+                    }.forEach(b::suggest)
+                    b.buildFuture()
+                }
+                    .then(
+                        Commands.argument("seconds", IntegerArgumentType.integer(1, 3600))
+                            .then(
+                                Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                                    val targetStr = StringArgumentType.getString(ctx, "target")
+                                    val seconds =
+                                        IntegerArgumentType.getInteger(ctx, "seconds")
+                                    val message = StringArgumentType.getString(ctx, "message")
+                                    val targets = resolveAudiences(targetStr)
+                                    if (targets.isEmpty()) {
+                                        context.locale.send(
+                                            ctx.source.sender,
+                                            "general.player-not-found",
+                                            "player" to targetStr
+                                        )
+                                        return@executes 0
+                                    }
+                                    notificationService.sendBossBar(targets, message, seconds)
+                                    Command.SINGLE_SUCCESS
+                                }
+                            ))).build()
+        registrar.register(context.plugin.pluginMeta, bossbarNode, "Broadcast timed bossbar message", emptyList())
+
+        // /sound <sound> [target|all] [volume] [pitch]
+        val soundNode = Commands.literal("sound")
+            .requires { it.sender.hasPermission("obsidian.command.sound") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("sound", StringArgumentType.word()).suggests { _, b ->
+                    org.bukkit.Registry.SOUNDS.asSequence().map { it.key.key }
+                        .filter { it.startsWith(b.remaining, true) }.take(40).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sound = StringArgumentType.getString(ctx, "sound")
+                    val targets = (ctx.source.sender as? Player)?.let { listOf(it) } ?: Bukkit.getOnlinePlayers()
+                    notificationService.playSound(targets, sound)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                        (listOf("all") + Bukkit.getOnlinePlayers().map { it.name }).filter {
+                            it.startsWith(
+                                b.remaining,
+                                true
+                            )
+                        }.forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val sound = StringArgumentType.getString(ctx, "sound")
+                        val targetStr = StringArgumentType.getString(ctx, "target")
+                        val targets = resolveAudiences(targetStr)
+                        notificationService.playSound(targets, sound)
+                        Command.SINGLE_SUCCESS
+                    }.then(
+                        Commands.argument(
+                            "volume",
+                            com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.0, 10.0)
+                        ).then(
+                            Commands.argument(
+                                "pitch",
+                                com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.1, 2.0)
+                            ).executes { ctx ->
+                                val sound = StringArgumentType.getString(ctx, "sound")
+                                val targetStr = StringArgumentType.getString(ctx, "target")
+                                val vol =
+                                    com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "volume").toFloat()
+                                val pitch =
+                                    com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(ctx, "pitch").toFloat()
+                                val targets = resolveAudiences(targetStr)
+                                notificationService.playSound(targets, sound, vol, pitch)
+                                Command.SINGLE_SUCCESS
+                            }
+                        )))).build()
+        registrar.register(context.plugin.pluginMeta, soundNode, "Play sound to target or server", emptyList())
+
+        // /counter <start|stop> ...
+        val counterNode = Commands.literal("counter")
+            .requires { it.sender.hasPermission("obsidian.command.counter") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("start").then(
+                    Commands.argument("seconds", IntegerArgumentType.integer(1, 3600)).then(
+                        Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                            val seconds = IntegerArgumentType.getInteger(ctx, "seconds")
+                            val message = StringArgumentType.getString(ctx, "message")
+                            val id = notificationService.startCountdown(Bukkit.getOnlinePlayers(), seconds, message)
+                            context.locale.send(
+                                ctx.source.sender,
+                                "chat.counter-started",
+                                "id" to id,
+                                "seconds" to seconds
+                            )
+                            Command.SINGLE_SUCCESS
+                        }
+                    )
+                ))
+            .then(
+                Commands.literal("stop").then(
+                    Commands.argument("id", StringArgumentType.word()).executes { ctx ->
+                        val id = StringArgumentType.getString(ctx, "id")
+                        if (notificationService.stopCountdown(id)) {
+                            context.locale.send(ctx.source.sender, "chat.counter-stopped", "id" to id)
+                            Command.SINGLE_SUCCESS
+                        } else {
+                            context.locale.send(ctx.source.sender, "chat.counter-not-found", "id" to id)
+                            0
+                        }
+                    }
+                ))
+            .build()
+        registrar.register(context.plugin.pluginMeta, counterNode, "Start or stop a countdown bar", emptyList())
     }
 }

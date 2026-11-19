@@ -11,12 +11,20 @@ import org.bukkit.event.entity.FoodLevelChangeEvent
 /**
  * Protects players with `godMode` enabled from incoming damage and hunger loss.
  */
-class GodModeListener(private val context: ObsidianContext) : Listener {
+class GodModeListener(
+    private val context: ObsidianContext,
+    private val flightAndCombat: FlightAndCombatService,
+) : Listener {
+
+    private fun isGod(player: Player): Boolean {
+        return context.users.getCached(player.uniqueId)?.godMode == true ||
+                flightAndCombat.isTempGodActive(player.uniqueId)
+    }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onDamage(event: EntityDamageEvent) {
         val player = event.entity as? Player ?: return
-        if (context.users.getCached(player.uniqueId)?.godMode == true) {
+        if (isGod(player)) {
             event.isCancelled = true
         }
     }
@@ -24,7 +32,7 @@ class GodModeListener(private val context: ObsidianContext) : Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     fun onFoodChange(event: FoodLevelChangeEvent) {
         val player = event.entity as? Player ?: return
-        if (context.users.getCached(player.uniqueId)?.godMode == true && event.foodLevel < player.foodLevel) {
+        if (isGod(player) && event.foodLevel < player.foodLevel) {
             event.isCancelled = true
         }
     }

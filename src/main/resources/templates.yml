@@ -1,0 +1,50 @@
+# Obsidian Punishment Templates
+# Templates can be used directly in punishment commands:
+# /ban <target> <template> [reason]
+# /mute <target> <template> [reason]
+
+ban-templates:
+  Example-Ban-Template:
+    reason: 'Violated community guidelines'
+    message: '<red>You have been banned for violating community guidelines.</red>'
+    permission: 'obsidian.template.example'
+    expire_ladder: '90d'
+    ip_template: false
+    ladder:
+      first:
+        duration: '3d'
+        reason: 'First offense - guidelines violation'
+      second:
+        duration: '14d'
+        reason: 'Second offense - guidelines violation'
+      third:
+        duration: '30d'
+        reason: 'Third offense - repeated violation'
+        actions:
+          - 'bbroadcast <yellow>Player {player} reached strike 3 for guidelines violation.</yellow>'
+
+mute-templates:
+  Example-Spam:
+    reason: 'Chat spam / excessive caps'
+    message: '<gold>You have been muted for chat spam.</gold>'
+    expire_ladder: '30d'
+    ip_template: false
+    ladder:
+      first:
+        duration: '1h'
+        message: '<red>First warning for spamming. Please slow down.</red>'
+      second:
+        duration: '12h'
+      third:
+        duration: '3d'
+
+warn-templates:
+  Example-Warning:
+    reason: 'Minor rule violation'
+    message: '<yellow>Warning: Please review server rules.</yellow>'
+    expire_ladder: '14d'
+
+kick-templates:
+  Example-AFK:
+    reason: 'AFK in competitive area'
+    message: '<gray>You were kicked for being AFK in a restricted area.</gray>'

@@ -34,7 +34,9 @@ class WarpModule(
     override fun registerCommands(registrar: Commands) {
         registerWarp(registrar)
         registerWarps(registrar)
+        registerWarpGroups(registrar)
         registerSetWarp(registrar)
+        registerSetWarpGroup(registrar)
         registerRemoveWarp(registrar)
     }
 
@@ -68,8 +70,44 @@ class WarpModule(
             .executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 showWarpList(player)
-            }.build()
+            }.then(
+                Commands.argument("group", StringArgumentType.word()).suggests { ctx, builder ->
+                    warpService.getWarpGroups(ctx.source.sender)
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }
+                        .forEach { builder.suggest(it) }
+                    builder.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val group = StringArgumentType.getString(ctx, "group")
+                    showWarpList(player, group)
+                }
+            ).build()
         registrar.register(context.plugin.pluginMeta, node, "Browse available server warps", emptyList())
+    }
+
+    private fun registerWarpGroups(registrar: Commands) {
+        val node = Commands.literal("warpgroups")
+            .requires { it.sender.hasPermission("obsidian.command.warp.showlist") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                val groups = warpService.getWarpGroups(sender)
+                if (groups.isEmpty()) {
+                    context.locale.send(sender, "warp.no-groups")
+                    return@executes 0
+                }
+                context.locale.send(sender, "warp.groups-header")
+                for (group in groups) {
+                    val count = warpService.getAccessibleWarps(sender, group).size
+                    context.locale.send(sender, "warp.groups-entry", "group" to group, "count" to count)
+                }
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            node,
+            "List available warp groups",
+            listOf("warpgroup"),
+        )
     }
 
     private fun registerSetWarp(registrar: Commands) {
@@ -83,7 +121,12 @@ class WarpModule(
                     context.locale.send(player, "warp.set", "warp" to name)
                     Command.SINGLE_SUCCESS
                 }.then(
-                    Commands.argument("group", StringArgumentType.word()).executes { ctx ->
+                    Commands.argument("group", StringArgumentType.word()).suggests { ctx, builder ->
+                        warpService.getWarpGroups(ctx.source.sender)
+                            .filter { it.startsWith(builder.remaining, ignoreCase = true) }
+                            .forEach { builder.suggest(it) }
+                        builder.buildFuture()
+                    }.executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                         val name = StringArgumentType.getString(ctx, "name")
                         val group = StringArgumentType.getString(ctx, "group")
@@ -93,6 +136,43 @@ class WarpModule(
                     })
             ).build()
         registrar.register(context.plugin.pluginMeta, node, "Create or update a server warp", emptyList())
+    }
+
+    private fun registerSetWarpGroup(registrar: Commands) {
+        val node = Commands.literal("setwarpgroup")
+            .requires { it.sender.hasPermission("obsidian.command.setwarp") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("name", StringArgumentType.word()).suggests { ctx, builder ->
+                    warpService.getAccessibleWarps(ctx.source.sender).map { it.name }
+                        .filter { it.startsWith(builder.remaining, ignoreCase = true) }
+                        .forEach { builder.suggest(it) }
+                    builder.buildFuture()
+                }.then(
+                    Commands.argument("group", StringArgumentType.word()).suggests { ctx, builder ->
+                        warpService.getWarpGroups(ctx.source.sender)
+                            .filter { it.startsWith(builder.remaining, ignoreCase = true) }
+                            .forEach { builder.suggest(it) }
+                        builder.buildFuture()
+                    }.executes { ctx ->
+                        val sender = ctx.source.sender
+                        val name = StringArgumentType.getString(ctx, "name")
+                        val group = StringArgumentType.getString(ctx, "group")
+                        if (warpService.setWarpGroup(name, group)) {
+                            context.locale.send(sender, "warp.group-set", "warp" to name, "group" to group)
+                            Command.SINGLE_SUCCESS
+                        } else {
+                            context.locale.send(sender, "warp.not-found", "warp" to name)
+                            0
+                        }
+                    }
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            node,
+            "Change the group of an existing warp",
+            emptyList(),
+        )
     }
 
     private fun registerRemoveWarp(registrar: Commands) {
@@ -121,14 +201,18 @@ class WarpModule(
         )
     }
 
-    private fun showWarpList(player: Player): Int {
-        val list = warpService.getAccessibleWarps(player)
+    private fun showWarpList(player: Player, group: String? = null): Int {
+        val list = warpService.getAccessibleWarps(player, group)
         if (list.isEmpty()) {
-            context.locale.send(player, "warp.none")
+            if (group != null) {
+                context.locale.send(player, "warp.none-group", "group" to group)
+            } else {
+                context.locale.send(player, "warp.none")
+            }
             return 0
         }
         if (warpService.useGui) {
-            warpService.openWarpsGui(player)
+            warpService.openWarpsGui(player, group = group)
         } else {
             val links = list.joinToString("<gray>, </gray>") { w ->
                 "<click:run_command:'/warp ${w.name}'><hover:show_text:'<green>Click to warp</green>'><aqua>${w.name}</aqua></hover></click>"

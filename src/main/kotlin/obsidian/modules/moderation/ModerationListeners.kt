@@ -28,6 +28,9 @@ class ModerationListeners(
     @EventHandler(priority = EventPriority.HIGHEST)
     fun onPreLogin(event: AsyncPlayerPreLoginEvent) {
         val ip = event.address.hostAddress
+        val isAllowed = runBlocking { context.punishmentRepository.isAllowed(event.uniqueId) }
+        if (isAllowed) return
+
         val ban = runBlocking { service.checkActiveBan(event.uniqueId, ip, event.name) } ?: return
         val expiresStr = DurationParser.formatExpiry(ban.expiresAt)
         val screen = TextFormatter.format(
@@ -39,6 +42,17 @@ class ModerationListeners(
             ),
         )
         event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, screen)
+
+        if (service.notifyBannedJoin && !service.isThrottled("banned_join_${event.uniqueId}")) {
+            val alert = TextFormatter.format(
+                "<dark_gray>[<red>Notice</red>]</dark_gray> <gray>Banned player <white>${event.name}</white> attempted to connect.</gray>"
+            )
+            for (p in Bukkit.getOnlinePlayers()) {
+                if (p.hasPermission("obsidian.notify.banned_join") || p.hasPermission("obsidian.admin")) {
+                    p.sendMessage(alert)
+                }
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -48,6 +62,45 @@ class ModerationListeners(
         service.applyVanishVisibilityForViewer(player)
         if (service.isVanished(player.uniqueId)) {
             event.joinMessage(null)
+        }
+
+        if (service.dupeipOnJoin) {
+            val ip = player.address?.address?.hostAddress
+            context.scheduler.runAsync {
+                val alts = runBlocking { service.scanAlts(player.uniqueId, ip) }
+                if (alts.size > 1) {
+                    val hasBannedAlt = if (service.dupeipOnBannedAccount) runBlocking {
+                        service.hasActiveBannedAlt(
+                            alts,
+                            player.uniqueId
+                        )
+                    } else false
+                    val hasMutedAlt = if (service.dupeipOnMutedAccount) runBlocking {
+                        service.hasActiveMutedAlt(
+                            alts,
+                            player.uniqueId
+                        )
+                    } else false
+                    val exceedsThreshold = alts.size >= service.dupeipOnJoinThreshold
+
+                    if (hasBannedAlt || hasMutedAlt || exceedsThreshold) {
+                        if (!service.isThrottled("dupeip_${player.uniqueId}")) {
+                            val otherAlts =
+                                alts.filter { it.uuid != player.uniqueId }.joinToString(", ") { it.username }
+                            val tag =
+                                if (hasBannedAlt) " <red>(Banned Alt Detected)</red>" else if (hasMutedAlt) " <gold>(Muted Alt Detected)</gold>" else ""
+                            val alertMsg = TextFormatter.format(
+                                "<dark_gray>[<yellow>Alt Notice</yellow>]</dark_gray> <white>${player.name}</white> has <aqua>${alts.size}</aqua> accounts on this IP: <gray>$otherAlts</gray>$tag"
+                            )
+                            for (staff in Bukkit.getOnlinePlayers()) {
+                                if (staff.hasPermission("obsidian.notify.dupeip_join") || staff.hasPermission("obsidian.admin")) {
+                                    staff.sendMessage(alertMsg)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -83,16 +136,42 @@ class ModerationListeners(
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     fun onCommand(event: PlayerCommandPreprocessEvent) {
         val player = event.player
-        val jail = service.getActiveJail(player.uniqueId) ?: return
-        if (player.hasPermission("obsidian.admin")) return
         val label = event.message.removePrefix("/").substringBefore(' ').substringAfter(':').lowercase()
-        if (label in service.blockedJailCommands) {
-            event.isCancelled = true
-            context.locale.send(
-                player,
-                "moderation.jailed-action-blocked",
-                "expires" to DurationParser.formatExpiry(jail.expiresAt),
-            )
+
+        val jail = service.getActiveJail(player.uniqueId)
+        if (jail != null && !player.hasPermission("obsidian.admin")) {
+            if (label in service.blockedJailCommands) {
+                event.isCancelled = true
+                context.locale.send(
+                    player,
+                    "moderation.jailed-action-blocked",
+                    "expires" to DurationParser.formatExpiry(jail.expiresAt),
+                )
+                return
+            }
+        }
+
+        val mute = service.getActiveMute(player.uniqueId)
+        if (mute != null && mute.type != PunishmentType.SHADOW_MUTE && !player.hasPermission("obsidian.admin")) {
+            if (label in service.muteBlockedCommands) {
+                event.isCancelled = true
+                context.locale.send(
+                    player,
+                    "moderation.muted-chat-blocked",
+                    "expires" to DurationParser.formatExpiry(mute.expiresAt),
+                    "reason" to mute.reason,
+                )
+                if (service.notifyMutedChat && !service.isThrottled("muted_cmd_${player.uniqueId}")) {
+                    val alert = TextFormatter.format(
+                        "<dark_gray>[<red>Mute Notice</red>]</dark_gray> <gray>Muted player <white>${player.name}</white> tried to use command: <white>/$label</white></gray>"
+                    )
+                    for (staff in Bukkit.getOnlinePlayers()) {
+                        if (staff.hasPermission("obsidian.notify.mute") || staff.hasPermission("obsidian.admin")) {
+                            staff.sendMessage(alert)
+                        }
+                    }
+                }
+            }
         }
     }
 

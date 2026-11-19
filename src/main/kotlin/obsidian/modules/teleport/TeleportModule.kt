@@ -49,6 +49,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
         registerTopAndJump(registrar)
         registerSpawnCommands(registrar)
         registerRandomTeleport(registrar)
+        registerMassAndNearTeleport(registrar)
     }
 
     private fun registerTp(registrar: Commands) {
@@ -422,6 +423,80 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     "z" to loc.blockZ,
                 )
             }
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun registerMassAndNearTeleport(registrar: Commands) {
+        // /tpaall
+        val tpaAllNode = Commands.literal("tpaall")
+            .requires { it.sender.hasPermission("obsidian.command.tpaall") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                var sent = 0
+                for (target in org.bukkit.Bukkit.getOnlinePlayers()) {
+                    if (target.uniqueId == sender.uniqueId) continue
+                    tpaService.sendRequest(sender, target, TpaType.HERE)
+                    sent++
+                }
+                context.locale.send(sender, "teleport.tpaall-sent", "count" to sent)
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            tpaAllNode,
+            "Send tpahere request to all online players",
+            emptyList()
+        )
+
+        // /tpall
+        val tpAllNode = Commands.literal("tpall")
+            .requires { it.sender.hasPermission("obsidian.command.tpall") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val dest = sender.location.clone()
+                var count = 0
+                for (target in org.bukkit.Bukkit.getOnlinePlayers()) {
+                    if (target.uniqueId == sender.uniqueId) continue
+                    teleportService.teleport(target, dest, TeleportCause.COMMAND, ensureSafe = false)
+                    count++
+                }
+                context.locale.send(sender, "teleport.tpall-done", "count" to count)
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(context.plugin.pluginMeta, tpAllNode, "Teleport all online players to you", emptyList())
+
+        // /near [radius]
+        val nearNode = Commands.literal("near")
+            .requires { it.sender.hasPermission("obsidian.command.near") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                executeNear(player, 200)
+            }.then(
+                Commands.argument("radius", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 2000))
+                    .executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val radius = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "radius")
+                        executeNear(player, radius)
+                    }).build()
+        registrar.register(context.plugin.pluginMeta, nearNode, "List nearby players", emptyList())
+    }
+
+    private fun executeNear(player: Player, radius: Int): Int {
+        val origin = player.location
+        val maxDistSq = radius.toDouble() * radius.toDouble()
+        val nearby = org.bukkit.Bukkit.getOnlinePlayers()
+            .filter { it.uniqueId != player.uniqueId && it.world == origin.world }
+            .mapNotNull { other ->
+                val distSq = origin.distanceSquared(other.location)
+                if (distSq <= maxDistSq) other.name to kotlin.math.sqrt(distSq).toInt() else null
+            }
+            .sortedBy { it.second }
+        if (nearby.isEmpty()) {
+            context.locale.send(player, "teleport.near-none", "radius" to radius)
+        } else {
+            val formatted = nearby.joinToString(", ") { "${it.first} (${it.second}m)" }
+            context.locale.send(player, "teleport.near-list", "radius" to radius, "players" to formatted)
         }
         return Command.SINGLE_SUCCESS
     }

@@ -166,6 +166,16 @@ object SpecializedCommandExecutor {
                 target.teleportAsync(loc)
             }
 
+            lower.startsWith("saveditem:") || lower.startsWith("giveitem:") -> {
+                val target = player ?: return
+                val payload = resolved.substringAfter(':').trim()
+                val parts = payload.split(' ')
+                val id = parts[0]
+                val amount = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                val service = context.getService<obsidian.modules.utility.SavedItemService>()
+                service?.giveItem(target, id, amount)
+            }
+
             else -> {
                 val cmd = resolved.removePrefix("/")
                 if (cmd.isNotEmpty()) {

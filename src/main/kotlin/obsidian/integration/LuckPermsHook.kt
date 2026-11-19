@@ -34,6 +34,26 @@ class LuckPermsHook {
         }.getOrNull()
     }
 
+    fun getGroupWeight(player: Player): Int {
+        if (!isAvailable()) return 0
+        return runCatching {
+            ensureInitialized()
+            val groupName = getPrimaryGroup(player) ?: return 0
+            val api = cachedApi ?: return 0
+            val getGroupManagerMethod = api.javaClass.getMethod("getGroupManager")
+            val groupManager = getGroupManagerMethod.invoke(api) ?: return 0
+            val getGroupMethod = groupManager.javaClass.getMethod("getGroup", String::class.java)
+            val group = getGroupMethod.invoke(groupManager, groupName) ?: return 0
+            val getWeightMethod = group.javaClass.getMethod("getWeight")
+            val optInt = getWeightMethod.invoke(group)
+            if (optInt is java.util.OptionalInt) {
+                if (optInt.isPresent) optInt.asInt else 0
+            } else if (optInt is Number) {
+                optInt.toInt()
+            } else 0
+        }.getOrDefault(0)
+    }
+
     private fun resolveMeta(player: Player): Pair<String, String>? {
         if (!isAvailable()) return null
         return runCatching {

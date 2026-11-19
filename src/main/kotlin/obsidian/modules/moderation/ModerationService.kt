@@ -3,10 +3,7 @@ package obsidian.modules.moderation
 import kotlinx.coroutines.launch
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
-import obsidian.core.database.PunishmentRecord
-import obsidian.core.database.PunishmentType
-import obsidian.core.database.SavedInventoryRecord
-import obsidian.core.database.StoredLocation
+import obsidian.core.database.*
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
 import obsidian.integration.DiscordWebhookService
@@ -23,18 +20,24 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Manages bans, mutes, warnings, jails, cuffs, vanish, IP lookup, and saved inventories.
+ * Manages bans, mutes, warnings, jails, cuffs, vanish, IP tracking, templates, and audit logs.
  */
 class ModerationService(private val context: ObsidianContext) {
 
     private val jailsFile = YamlConfigFile(context.plugin, "jails.yml")
     private val jails = ConcurrentHashMap<String, StoredLocation>()
 
+    val templates = PunishmentTemplateService(context)
+    val policy = PunishmentPolicyService(context)
+
     // Active online/cached states keyed by UUID
     private val activeMutes = ConcurrentHashMap<UUID, PunishmentRecord>()
     private val activeJails = ConcurrentHashMap<UUID, PunishmentRecord>()
     private val cuffedPlayers = ConcurrentHashMap.newKeySet<UUID>()
     private val vanishedPlayers = ConcurrentHashMap.newKeySet<UUID>()
+
+    // Notification throttle cache: key -> lastSentMillis
+    private val notificationThrottle = ConcurrentHashMap<String, Long>()
 
     var defaultBanReason: String = "Violated server rules"
         private set
@@ -52,13 +55,48 @@ class ModerationService(private val context: ObsidianContext) {
         private set
     private var warnEscalations: Map<Int, String> = emptyMap()
 
+    // Feature configuration
+    var silentByDefault: Boolean = false
+        private set
+    var punishIpByDefault: Boolean = false
+        private set
+    var requireBanMuteReason: Boolean = false
+        private set
+    var requireKickReason: Boolean = false
+        private set
+    var requireUnbanUnmuteReason: Boolean = false
+        private set
+    var muteBlockedCommands: Set<String> = emptySet()
+        private set
+    var notifyBannedJoin: Boolean = true
+        private set
+    var notifyMutedChat: Boolean = true
+        private set
+    var dupeipOnJoin: Boolean = true
+        private set
+    var dupeipScanLimit: Int = 20
+        private set
+    var dupeipScanFilterMillis: Long = 7L * 24 * 3600 * 1000L
+        private set
+    var dupeipOnBannedAccount: Boolean = true
+        private set
+    var dupeipOnMutedAccount: Boolean = false
+        private set
+    var dupeipOnJoinThreshold: Int = 5
+        private set
+    var throttleSeconds: Long = 60L
+        private set
+
     init {
         reload()
     }
 
     fun reload() {
         jailsFile.reload()
+        templates.reload()
+        policy.reload()
         val raw = context.config.raw
+
         defaultBanReason =
             raw.getString("moderation.default-ban-reason", "Violated server rules") ?: "Violated server rules"
         defaultMuteReason = raw.getString("moderation.default-mute-reason", "Muted by staff") ?: "Muted by staff"
@@ -69,6 +107,24 @@ class ModerationService(private val context: ObsidianContext) {
         blockedJailCommands = raw.getStringList("moderation.jail-blocked-commands").map { it.lowercase() }.toSet()
         vanishNightVision = raw.getBoolean("moderation.vanish.night-vision", true)
         vanishSilentChest = raw.getBoolean("moderation.vanish.silent-chest", true)
+
+        silentByDefault = raw.getBoolean("moderation.silent-by-default", false)
+        punishIpByDefault = raw.getBoolean("moderation.punish-ip", false)
+        requireBanMuteReason = raw.getBoolean("moderation.require-ban-mute-reason", false)
+        requireKickReason = raw.getBoolean("moderation.require-kick-reason", false)
+        requireUnbanUnmuteReason = raw.getBoolean("moderation.require-unban-unmute-reason", false)
+        muteBlockedCommands = raw.getStringList("moderation.mute-blocked-commands").map { it.lowercase() }.toSet()
+
+        notifyBannedJoin = raw.getBoolean("moderation.notify.banned-player-join", true)
+        notifyMutedChat = raw.getBoolean("moderation.notify.muted-player-chat", true)
+        dupeipOnJoin = raw.getBoolean("moderation.notify.dupeip-on-join", true)
+        dupeipScanLimit = raw.getInt("moderation.notify.dupeip-scan-limit", 20)
+        val filterDurStr = raw.getString("moderation.notify.dupeip-scan-filter-duration", "7d") ?: "7d"
+        dupeipScanFilterMillis = DurationParser.parseMillis(filterDurStr) ?: (7L * 24 * 3600 * 1000L)
+        dupeipOnBannedAccount = raw.getBoolean("moderation.notify.dupeip-on-banned-account", true)
+        dupeipOnMutedAccount = raw.getBoolean("moderation.notify.dupeip-on-muted-account", false)
+        dupeipOnJoinThreshold = raw.getInt("moderation.notify.dupeip-on-join-threshold", 5)
+        throttleSeconds = raw.getLong("moderation.notify.throttle-seconds", 60L).coerceAtLeast(1L)
 
         val escalations = mutableMapOf<Int, String>()
         raw.getConfigurationSection("moderation.warn-auto-thresholds")?.let { sec ->
@@ -87,6 +143,16 @@ class ModerationService(private val context: ObsidianContext) {
                 jails[name.lowercase()] = loc
             }
         }
+    }
+
+    fun isThrottled(key: String): Boolean {
+        val now = System.currentTimeMillis()
+        val last = notificationThrottle[key] ?: 0L
+        if (now - last < throttleSeconds * 1000L) {
+            return true
+        }
+        notificationThrottle[key] = now
+        return false
     }
 
     // --- Target lookup ---
@@ -118,8 +184,13 @@ class ModerationService(private val context: ObsidianContext) {
             val ip = context.punishmentRepository.findIpsByUuid(parsedUuid).firstOrNull()?.ip
             return TargetIdentity(parsedUuid, u?.username ?: parsedUuid.toString(), ip, null)
         }
-        if (isIpAddress(input)) {
+        if (isIpOrWildcard(input)) {
             return TargetIdentity(null, input, input, null)
+        }
+        val lastUuid = context.punishmentRepository.findLastUuid(input)
+        if (lastUuid != null) {
+            val latestIp = context.punishmentRepository.findIpsByUuid(lastUuid).firstOrNull()?.ip
+            return TargetIdentity(lastUuid, input, latestIp, null)
         }
         val offline = Bukkit.getOfflinePlayerIfCached(input)
         if (offline != null && offline.name != null) {
@@ -149,6 +220,16 @@ class ModerationService(private val context: ObsidianContext) {
             }
             return rec
         }
+        if (!ip.isNullOrBlank()) {
+            val wildcardBans = context.punishmentRepository.findActiveByIpWildcard(ip, PunishmentType.IP_BAN)
+            for (rec in wildcardBans) {
+                if (rec.isExpired(now)) {
+                    context.punishmentRepository.deactivate(rec.id)
+                    continue
+                }
+                return rec
+            }
+        }
         return null
     }
 
@@ -158,26 +239,106 @@ class ModerationService(private val context: ObsidianContext) {
         durationMillis: Long?,
         reason: String?,
         ipBan: Boolean = false,
-    ): PunishmentRecord {
+        silent: Boolean = silentByDefault,
+        templateName: String? = null,
+        noOverride: Boolean = false,
+        modify: Boolean = false,
+        customSender: String? = null,
+    ): Pair<PunishmentRecord?, String?> {
+        val type = if (ipBan || punishIpByDefault) PunishmentType.IP_BAN else PunishmentType.BAN
+
+        // 1. Check exemptions
+        val (isExempt, exemptReason) = policy.checkExempt(actor, target.onlinePlayer, target.name, type)
+        if (isExempt) {
+            return null to (exemptReason ?: "Target is exempt from punishment.")
+        }
+
+        // 2. Resolve template or ladder if provided
+        var effectiveDuration = durationMillis
+        var effectiveReason = reason
+        var templateActions: List<String> = emptyList()
+
+        if (templateName != null) {
+            val tmpl = templates.getTemplate(templateName, type)
+            if (tmpl == null) {
+                return null to "Unknown template '$templateName'."
+            }
+            if (tmpl.permission != null && !actor.hasPermission(tmpl.permission) && !actor.hasPermission("obsidian.admin")) {
+                return null to "You do not have permission to use template '$templateName'."
+            }
+            val strikes = context.punishmentRepository.countTemplateStrikes(
+                target.uuid, target.ip, tmpl.name, System.currentTimeMillis() - tmpl.expireLadderMillis, tmpl.ipTemplate
+            )
+            val step = templates.evaluateStep(tmpl, strikes)
+            if (effectiveDuration == null && step.durationMillis != null) {
+                effectiveDuration = step.durationMillis
+            }
+            if (effectiveReason.isNullOrBlank()) {
+                effectiveReason = step.reason ?: tmpl.defaultReason
+            }
+            templateActions = step.actions
+        }
+
+        val resolvedReason = effectiveReason?.takeIf { it.isNotBlank() } ?: defaultBanReason
+
+        // 3. Duration limit check
+        val (allowedDur, durError) = policy.checkDurationLimit(actor, effectiveDuration, type)
+        if (!allowedDur) {
+            return null to durError
+        }
+
+        // 4. Cooldown check
+        val remainingCooldown = policy.checkAndApplyCooldown(actor, target.name, type)
+        if (remainingCooldown > 0L) {
+            val secs = (remainingCooldown / 1000L).coerceAtLeast(1L)
+            return null to "You must wait ${secs}s before issuing another punishment."
+        }
+
+        // 5. Check existing active ban for -N and --modify
+        val existing = checkActiveBan(target.uuid, target.ip, target.name)
+        if (existing != null) {
+            if (noOverride) {
+                return null to "Target is already banned (-N prevented override)."
+            }
+            if (modify) {
+                val newExpiry = effectiveDuration?.let { System.currentTimeMillis() + it }
+                context.punishmentRepository.updatePunishment(existing.id, resolvedReason, newExpiry)
+                return existing.copy(reason = resolvedReason, expiresAt = newExpiry) to null
+            }
+        }
+
         val now = System.currentTimeMillis()
-        val resolvedReason = reason?.takeIf { it.isNotBlank() } ?: defaultBanReason
-        val type = if (ipBan) PunishmentType.IP_BAN else PunishmentType.BAN
         val actorUuid = (actor as? Player)?.uniqueId
+        val actorName = customSender ?: actor.name
         val record = PunishmentRecord(
             type = type,
             targetUuid = target.uuid,
             targetName = target.name,
-            targetIp = if (ipBan) target.ip else null,
+            targetIp = if (type == PunishmentType.IP_BAN) (target.ip ?: target.name) else null,
             actorUuid = actorUuid,
-            actorName = actor.name,
+            actorName = actorName,
             reason = resolvedReason,
             createdAt = now,
-            expiresAt = durationMillis?.let { now + it },
+            expiresAt = effectiveDuration?.let { now + it },
             active = true,
+            silent = silent,
+            templateId = templateName,
         )
+
         context.punishmentRepository.deactivateForTarget(type, target.uuid, record.targetIp)
         context.punishmentRepository.insert(record)
-        return record
+
+        // Execute template actions if any
+        if (templateActions.isNotEmpty()) {
+            context.scheduler.runGlobal {
+                for (action in templateActions) {
+                    val cmd = action.replace("\$playerName", target.name).replace("{player}", target.name)
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.removePrefix("/"))
+                }
+            }
+        }
+
+        return record to null
     }
 
     fun applyBanEffects(target: TargetIdentity, actor: CommandSender, record: PunishmentRecord, ipBan: Boolean) {
@@ -186,7 +347,7 @@ class ModerationService(private val context: ObsidianContext) {
             context.locale.raw("moderation.banned-screen"),
             mapOf(
                 "reason" to record.reason,
-                "actor" to actor.name,
+                "actor" to record.actorName,
                 "expires" to expiresStr,
             ),
         )
@@ -195,41 +356,62 @@ class ModerationService(private val context: ObsidianContext) {
         }
         if (ipBan && record.targetIp != null) {
             for (online in Bukkit.getOnlinePlayers()) {
-                if (online.address?.address?.hostAddress == record.targetIp) {
+                val onlineIp = online.address?.address?.hostAddress
+                if (onlineIp != null && context.punishmentRepository.ipMatches(record.targetIp, onlineIp)) {
                     context.scheduler.runForEntity(online) { online.kick(kickComponent) }
                 }
             }
         }
+
+        val prefix = if (record.silent) "<dark_gray>[<red>Silent</red>]</dark_gray> " else ""
         val broadcast = TextFormatter.format(
-            context.locale.raw("moderation.ban-broadcast"),
+            prefix + context.locale.raw("moderation.ban-broadcast"),
             mapOf(
                 "target" to target.name,
-                "actor" to actor.name,
+                "actor" to record.actorName,
                 "reason" to record.reason,
                 "expires" to expiresStr,
             ),
         )
-        Bukkit.broadcast(broadcast)
+
+        if (record.silent) {
+            for (p in Bukkit.getOnlinePlayers()) {
+                if (p.hasPermission("obsidian.notify.silent") || p.hasPermission("obsidian.admin")) {
+                    p.sendMessage(broadcast)
+                }
+            }
+            Bukkit.getConsoleSender().sendMessage(broadcast)
+        } else {
+            Bukkit.broadcast(broadcast)
+        }
+
         context.getService<DiscordWebhookService>()?.sendEmbedAsync(
             title = if (ipBan) "IP Ban Issued" else "Ban Issued",
-            description = "Target: ${target.name}\nActor: ${actor.name}\nReason: ${record.reason}\nExpires: $expiresStr",
+            description = "Target: ${target.name}\nActor: ${record.actorName}\nReason: ${record.reason}\nExpires: $expiresStr\nSilent: ${record.silent}",
             colorRgb = 0xEF4444,
         )
     }
 
-    suspend fun unban(query: String): Boolean {
+    suspend fun unban(
+        query: String,
+        actor: CommandSender,
+        reason: String? = null,
+    ): Boolean {
         val identity = resolveTarget(query)
+        val actorUuid = (actor as? Player)?.uniqueId
         var deactivated = 0
         if (identity != null) {
-            deactivated += context.punishmentRepository.deactivateForTarget(PunishmentType.BAN, identity.uuid, null)
             deactivated += context.punishmentRepository.deactivateForTarget(
-                PunishmentType.IP_BAN, identity.uuid, identity.ip
+                PunishmentType.BAN, identity.uuid, null, actorUuid, actor.name, reason
+            )
+            deactivated += context.punishmentRepository.deactivateForTarget(
+                PunishmentType.IP_BAN, identity.uuid, identity.ip, actorUuid, actor.name, reason
             )
         }
         val byQuery =
             context.punishmentRepository.findActiveByNameOrIp(query, PunishmentType.BAN, PunishmentType.IP_BAN)
         for (rec in byQuery) {
-            context.punishmentRepository.deactivate(rec.id)
+            context.punishmentRepository.deactivate(rec.id, actorUuid, actor.name, reason)
             deactivated++
         }
         return deactivated > 0
@@ -247,34 +429,147 @@ class ModerationService(private val context: ObsidianContext) {
         return rec
     }
 
+    suspend fun checkActiveMute(uuid: UUID?, ip: String?): PunishmentRecord? {
+        val now = System.currentTimeMillis()
+        val byId = uuid?.let { activeMutes[it] }
+        if (byId != null && !byId.isExpired(now)) return byId
+
+        val active = context.punishmentRepository.findActive(
+            uuid, ip, PunishmentType.MUTE, PunishmentType.IP_MUTE, PunishmentType.SHADOW_MUTE
+        )
+        for (rec in active) {
+            if (rec.isExpired(now)) {
+                context.punishmentRepository.deactivate(rec.id)
+                continue
+            }
+            if (uuid != null) activeMutes[uuid] = rec
+            return rec
+        }
+        if (!ip.isNullOrBlank()) {
+            val wildcardMutes = context.punishmentRepository.findActiveByIpWildcard(
+                ip, PunishmentType.IP_MUTE
+            )
+            for (rec in wildcardMutes) {
+                if (rec.isExpired(now)) {
+                    context.punishmentRepository.deactivate(rec.id)
+                    continue
+                }
+                return rec
+            }
+        }
+        return null
+    }
+
     suspend fun mute(
         target: TargetIdentity,
         actor: CommandSender,
         durationMillis: Long?,
         reason: String?,
         shadow: Boolean = false,
-    ): PunishmentRecord {
+        ipMute: Boolean = false,
+        silent: Boolean = silentByDefault,
+        templateName: String? = null,
+        noOverride: Boolean = false,
+        modify: Boolean = false,
+        customSender: String? = null,
+    ): Pair<PunishmentRecord?, String?> {
+        val type = when {
+            shadow -> PunishmentType.SHADOW_MUTE
+            ipMute || punishIpByDefault -> PunishmentType.IP_MUTE
+            else -> PunishmentType.MUTE
+        }
+
+        val (isExempt, exemptReason) = policy.checkExempt(actor, target.onlinePlayer, target.name, type)
+        if (isExempt) {
+            return null to (exemptReason ?: "Target is exempt from mutes.")
+        }
+
+        var effectiveDuration = durationMillis
+        var effectiveReason = reason
+        var templateActions: List<String> = emptyList()
+
+        if (templateName != null) {
+            val tmpl = templates.getTemplate(templateName, type)
+            if (tmpl == null) {
+                return null to "Unknown template '$templateName'."
+            }
+            if (tmpl.permission != null && !actor.hasPermission(tmpl.permission) && !actor.hasPermission("obsidian.admin")) {
+                return null to "You do not have permission to use template '$templateName'."
+            }
+            val strikes = context.punishmentRepository.countTemplateStrikes(
+                target.uuid, target.ip, tmpl.name, System.currentTimeMillis() - tmpl.expireLadderMillis, tmpl.ipTemplate
+            )
+            val step = templates.evaluateStep(tmpl, strikes)
+            if (effectiveDuration == null && step.durationMillis != null) {
+                effectiveDuration = step.durationMillis
+            }
+            if (effectiveReason.isNullOrBlank()) {
+                effectiveReason = step.reason ?: tmpl.defaultReason
+            }
+            templateActions = step.actions
+        }
+
+        val resolvedReason = effectiveReason?.takeIf { it.isNotBlank() } ?: defaultMuteReason
+
+        val (allowedDur, durError) = policy.checkDurationLimit(actor, effectiveDuration, type)
+        if (!allowedDur) {
+            return null to durError
+        }
+
+        val remainingCooldown = policy.checkAndApplyCooldown(actor, target.name, type)
+        if (remainingCooldown > 0L) {
+            val secs = (remainingCooldown / 1000L).coerceAtLeast(1L)
+            return null to "You must wait ${secs}s before issuing another punishment."
+        }
+
+        val existing = checkActiveMute(target.uuid, target.ip)
+        if (existing != null) {
+            if (noOverride) {
+                return null to "Target is already muted (-N prevented override)."
+            }
+            if (modify) {
+                val newExpiry = effectiveDuration?.let { System.currentTimeMillis() + it }
+                context.punishmentRepository.updatePunishment(existing.id, resolvedReason, newExpiry)
+                return existing.copy(reason = resolvedReason, expiresAt = newExpiry) to null
+            }
+        }
+
         val now = System.currentTimeMillis()
-        val resolvedReason = reason?.takeIf { it.isNotBlank() } ?: defaultMuteReason
-        val type = if (shadow) PunishmentType.SHADOW_MUTE else PunishmentType.MUTE
+        val actorUuid = (actor as? Player)?.uniqueId
+        val actorName = customSender ?: actor.name
         val rec = PunishmentRecord(
             type = type,
             targetUuid = target.uuid,
             targetName = target.name,
-            actorUuid = (actor as? Player)?.uniqueId,
-            actorName = actor.name,
+            targetIp = if (type == PunishmentType.IP_MUTE) (target.ip ?: target.name) else null,
+            actorUuid = actorUuid,
+            actorName = actorName,
             reason = resolvedReason,
             createdAt = now,
-            expiresAt = durationMillis?.let { now + it },
+            expiresAt = effectiveDuration?.let { now + it },
             active = true,
+            silent = silent,
+            templateId = templateName,
         )
+
         if (target.uuid != null) {
             context.punishmentRepository.deactivateForTarget(PunishmentType.MUTE, target.uuid)
+            context.punishmentRepository.deactivateForTarget(PunishmentType.IP_MUTE, target.uuid, rec.targetIp)
             context.punishmentRepository.deactivateForTarget(PunishmentType.SHADOW_MUTE, target.uuid)
             activeMutes[target.uuid] = rec
         }
         context.punishmentRepository.insert(rec)
-        return rec
+
+        if (templateActions.isNotEmpty()) {
+            context.scheduler.runGlobal {
+                for (action in templateActions) {
+                    val cmd = action.replace("\$playerName", target.name).replace("{player}", target.name)
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.removePrefix("/"))
+                }
+            }
+        }
+
+        return rec to null
     }
 
     fun applyMuteEffects(target: TargetIdentity, actor: CommandSender, rec: PunishmentRecord, shadow: Boolean) {
@@ -298,31 +593,84 @@ class ModerationService(private val context: ObsidianContext) {
         }
     }
 
-    suspend fun unmute(target: TargetIdentity): Boolean {
-        val uuid = target.uuid ?: return false
-        activeMutes.remove(uuid)
+    suspend fun unmute(
+        target: TargetIdentity,
+        actor: CommandSender,
+        reason: String? = null,
+    ): Boolean {
+        val uuid = target.uuid
+        val actorUuid = (actor as? Player)?.uniqueId
+        if (uuid != null) activeMutes.remove(uuid)
         val removed = context.punishmentRepository.deactivateForTarget(
-            PunishmentType.MUTE,
-            uuid
-        ) + context.punishmentRepository.deactivateForTarget(PunishmentType.SHADOW_MUTE, uuid)
+            PunishmentType.MUTE, uuid, target.ip, actorUuid, actor.name, reason
+        ) + context.punishmentRepository.deactivateForTarget(
+            PunishmentType.IP_MUTE, uuid, target.ip, actorUuid, actor.name, reason
+        ) + context.punishmentRepository.deactivateForTarget(
+            PunishmentType.SHADOW_MUTE, uuid, target.ip, actorUuid, actor.name, reason
+        )
         return removed > 0
     }
 
     // --- Warnings ---
 
-    suspend fun warn(target: TargetIdentity, actor: CommandSender, reason: String?): Pair<Int, String> {
-        val uuid = target.uuid ?: return 0 to defaultWarnReason
-        val resolvedReason = reason?.takeIf { it.isNotBlank() } ?: defaultWarnReason
+    suspend fun warn(
+        target: TargetIdentity,
+        actor: CommandSender,
+        reason: String?,
+        silent: Boolean = silentByDefault,
+        templateName: String? = null,
+        customSender: String? = null,
+    ): Pair<Int, String?> {
+        val uuid = target.uuid ?: return 0 to null
+        val (isExempt, exemptReason) = policy.checkExempt(actor, target.onlinePlayer, target.name, PunishmentType.WARN)
+        if (isExempt) {
+            return 0 to (exemptReason ?: "Target is exempt from warnings.")
+        }
+
+        var effectiveReason = reason
+        var templateActions: List<String> = emptyList()
+
+        if (templateName != null) {
+            val tmpl = templates.getTemplate(templateName, PunishmentType.WARN)
+            if (tmpl != null) {
+                val strikes = context.punishmentRepository.countTemplateStrikes(
+                    target.uuid,
+                    target.ip,
+                    tmpl.name,
+                    System.currentTimeMillis() - tmpl.expireLadderMillis,
+                    tmpl.ipTemplate
+                )
+                val step = templates.evaluateStep(tmpl, strikes)
+                if (effectiveReason.isNullOrBlank()) effectiveReason = step.reason ?: tmpl.defaultReason
+                templateActions = step.actions
+            }
+        }
+
+        val resolvedReason = effectiveReason?.takeIf { it.isNotBlank() } ?: defaultWarnReason
+        val actorUuid = (actor as? Player)?.uniqueId
+        val actorName = customSender ?: actor.name
         val rec = PunishmentRecord(
             type = PunishmentType.WARN,
             targetUuid = uuid,
             targetName = target.name,
-            actorUuid = (actor as? Player)?.uniqueId,
-            actorName = actor.name,
+            actorUuid = actorUuid,
+            actorName = actorName,
             reason = resolvedReason,
             active = true,
+            silent = silent,
+            templateId = templateName,
         )
         context.punishmentRepository.insert(rec)
+
+        if (templateActions.isNotEmpty()) {
+            context.scheduler.runGlobal {
+                for (action in templateActions) {
+                    val cmd = action.replace("\$playerName", target.name).replace("{player}", target.name)
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.removePrefix("/"))
+                }
+            }
+        }
+
         val allWarnings = context.punishmentRepository.findActive(uuid, null, PunishmentType.WARN)
         return allWarnings.size to resolvedReason
     }
@@ -355,6 +703,91 @@ class ModerationService(private val context: ObsidianContext) {
 
     suspend fun clearWarnings(uuid: UUID): Int =
         context.punishmentRepository.deactivateForTarget(PunishmentType.WARN, uuid)
+
+    suspend fun unwarn(
+        uuid: UUID,
+        actor: CommandSender,
+        reason: String? = null,
+    ): Boolean {
+        val active = context.punishmentRepository.findActive(uuid, null, PunishmentType.WARN)
+        val latest = active.firstOrNull() ?: return false
+        val actorUuid = (actor as? Player)?.uniqueId
+        context.punishmentRepository.deactivate(latest.id, actorUuid, actor.name, reason)
+        return true
+    }
+
+    // --- Kicks ---
+
+    fun recordKick(target: TargetIdentity, actor: CommandSender, reason: String) {
+        val now = System.currentTimeMillis()
+        val actorUuid = (actor as? Player)?.uniqueId
+        val rec = PunishmentRecord(
+            type = PunishmentType.KICK,
+            targetUuid = target.uuid,
+            targetName = target.name,
+            targetIp = target.ip,
+            actorUuid = actorUuid,
+            actorName = actor.name,
+            reason = reason,
+            createdAt = now,
+            active = false,
+        )
+        context.scheduler.asyncScope.launch {
+            context.punishmentRepository.insert(rec)
+        }
+    }
+
+    // --- Staff Audit & Rollback ---
+
+    suspend fun rollbackStaff(
+        staffQuery: String,
+        durationMillis: Long,
+        actor: CommandSender,
+    ): Int {
+        val identity = resolveTarget(staffQuery)
+        val since = System.currentTimeMillis() - durationMillis
+        return context.punishmentRepository.rollbackByStaff(
+            identity?.uuid, staffQuery, since, actor.name
+        )
+    }
+
+    suspend fun pruneHistory(
+        targetQuery: String,
+        durationMillis: Long?,
+    ): Int {
+        val identity = resolveTarget(targetQuery) ?: return 0
+        val before = durationMillis?.let { System.currentTimeMillis() - it }
+        return context.punishmentRepository.pruneHistory(identity.uuid, identity.ip, before)
+    }
+
+    // --- Alt Account (DupeIP) Detection ---
+
+    suspend fun scanAlts(targetUuid: UUID?, ip: String?): List<PlayerIpRecord> {
+        if (ip.isNullOrBlank()) return emptyList()
+        val accounts = context.punishmentRepository.findAccountsByIp(ip)
+        val cutoff = System.currentTimeMillis() - dupeipScanFilterMillis
+        return accounts.filter { it.lastSeen >= cutoff }.take(dupeipScanLimit)
+    }
+
+    suspend fun hasActiveBannedAlt(accounts: List<PlayerIpRecord>, currentUuid: UUID?): Boolean {
+        for (acc in accounts) {
+            if (acc.uuid == currentUuid) continue
+            val ban =
+                context.punishmentRepository.findActive(acc.uuid, acc.ip, PunishmentType.BAN, PunishmentType.IP_BAN)
+            if (ban.any { !it.isExpired() }) return true
+        }
+        return false
+    }
+
+    suspend fun hasActiveMutedAlt(accounts: List<PlayerIpRecord>, currentUuid: UUID?): Boolean {
+        for (acc in accounts) {
+            if (acc.uuid == currentUuid) continue
+            val mute =
+                context.punishmentRepository.findActive(acc.uuid, acc.ip, PunishmentType.MUTE, PunishmentType.IP_MUTE)
+            if (mute.any { !it.isExpired() }) return true
+        }
+        return false
+    }
 
     // --- Jails ---
 
@@ -514,11 +947,14 @@ class ModerationService(private val context: ObsidianContext) {
             if (!ip.isNullOrBlank()) {
                 context.punishmentRepository.recordPlayerIp(uuid, ip, player.name)
             }
+            context.punishmentRepository.recordNameHistory(uuid, player.name)
+
             val now = System.currentTimeMillis()
             val active = context.punishmentRepository.findActive(
                 uuid,
-                null,
+                ip,
                 PunishmentType.MUTE,
+                PunishmentType.IP_MUTE,
                 PunishmentType.SHADOW_MUTE,
                 PunishmentType.JAIL,
             )
@@ -530,7 +966,7 @@ class ModerationService(private val context: ObsidianContext) {
                     continue
                 }
                 when (rec.type) {
-                    PunishmentType.MUTE, PunishmentType.SHADOW_MUTE -> activeMutes[uuid] = rec
+                    PunishmentType.MUTE, PunishmentType.IP_MUTE, PunishmentType.SHADOW_MUTE -> activeMutes[uuid] = rec
                     PunishmentType.JAIL -> {
                         activeJails[uuid] = rec
                         val loc = rec.jailName?.let(::getJailLocation)?.toBukkitLocation()
@@ -614,7 +1050,11 @@ class ModerationService(private val context: ObsidianContext) {
 
     companion object {
         private val ipRegex = Regex("""^\d{1,3}(\.\d{1,3}){3}$|^[0-9a-fA-F:]+$""")
+        private val wildcardRegex = Regex("""^\d{1,3}(\.(\d{1,3}|\*)){1,3}$""")
 
         fun isIpAddress(value: String): Boolean = ipRegex.matches(value.trim())
+
+        fun isIpOrWildcard(value: String): Boolean =
+            ipRegex.matches(value.trim()) || wildcardRegex.matches(value.trim())
     }
 }

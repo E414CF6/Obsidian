@@ -47,9 +47,21 @@ class WarpService(
 
     fun getWarp(name: String): WarpRecord? = warps[name.lowercase()]
 
-    fun getAccessibleWarps(sender: CommandSender): List<WarpRecord> =
-        warps.values.filter { (!it.hidden || sender.hasPermission("obsidian.admin")) && canAccess(sender, it) }
+    fun getAccessibleWarps(sender: CommandSender, group: String? = null): List<WarpRecord> =
+        warps.values.asSequence()
+            .filter { (!it.hidden || sender.hasPermission("obsidian.admin")) && canAccess(sender, it) }
+            .filter { group == null || it.groupName.equals(group, ignoreCase = true) }
             .sortedWith(compareBy<WarpRecord> { it.page }.thenBy { it.name.lowercase() })
+            .toList()
+
+    fun getWarpGroups(sender: CommandSender): List<String> =
+        warps.values.asSequence()
+            .filter { (!it.hidden || sender.hasPermission("obsidian.admin")) && canAccess(sender, it) }
+            .mapNotNull { it.groupName }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+            .toList()
 
     fun canAccess(sender: CommandSender, warp: WarpRecord): Boolean {
         if (!warp.requiresPermission) return true
@@ -85,6 +97,18 @@ class WarpService(
         return record
     }
 
+    fun setWarpGroup(name: String, group: String?): Boolean {
+        val key = name.lowercase()
+        val existing = warps[key] ?: return false
+        val updated =
+            existing.copy(groupName = group?.takeIf { it.isNotBlank() && !it.equals("none", ignoreCase = true) })
+        warps[key] = updated
+        context.scheduler.asyncScope.launch {
+            context.warpRepository.upsert(updated)
+        }
+        return true
+    }
+
     fun deleteWarp(name: String): Boolean {
         val removed = warps.remove(name.lowercase()) ?: return false
         context.scheduler.asyncScope.launch {
@@ -114,13 +138,17 @@ class WarpService(
         }
     }
 
-    fun openWarpsGui(player: Player, page: Int = 1) {
-        val list = getAccessibleWarps(player)
+    fun openWarpsGui(player: Player, page: Int = 1, group: String? = null) {
+        val list = getAccessibleWarps(player, group)
         val perPage = 28
         val totalPages = ((list.size - 1).coerceAtLeast(0) / perPage) + 1
         val currentPage = page.coerceIn(1, totalPages)
 
-        val title = context.locale.component("warp.gui-title", mapOf("page" to currentPage.toString()))
+        val title = if (group != null) {
+            context.locale.component("warp.gui-title-group", mapOf("page" to currentPage.toString(), "group" to group))
+        } else {
+            context.locale.component("warp.gui-title", mapOf("page" to currentPage.toString()))
+        }
         val window = MenuWindow(title, 6)
         window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
 
@@ -151,12 +179,12 @@ class WarpService(
 
         if (currentPage > 1) {
             window.set(48, MenuItems.item(Material.ARROW, "<yellow>Previous Page</yellow>")) {
-                openWarpsGui(player, currentPage - 1)
+                openWarpsGui(player, currentPage - 1, group)
             }
         }
         if (currentPage < totalPages) {
             window.set(50, MenuItems.item(Material.ARROW, "<yellow>Next Page</yellow>")) {
-                openWarpsGui(player, currentPage + 1)
+                openWarpsGui(player, currentPage + 1, group)
             }
         }
         window.open(player)

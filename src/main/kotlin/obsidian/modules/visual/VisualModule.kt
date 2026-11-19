@@ -9,8 +9,14 @@ import obsidian.core.command.CommandHelper
 import obsidian.core.database.StoredLocation
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.TextFormatter
+import org.bukkit.Bukkit
+import org.bukkit.Location
+import org.bukkit.Material
+import org.bukkit.Registry
+import org.bukkit.block.CreatureSpawner
 import org.bukkit.block.sign.Side
 import org.bukkit.entity.Display
+import org.bukkit.entity.EntityType
 import org.bukkit.event.Listener
 
 /**
@@ -29,6 +35,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
     val hologramService = HologramService(context)
     val armorStandService = ArmorStandService(context)
     val signService = SignService(context)
+    val mirrorService = MirrorService(context)
+    val spawnerEggService = SpawnerEggService(context)
 
     override fun onEnable() {
         context.registerService(selectionService)
@@ -36,6 +44,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         context.registerService(hologramService)
         context.registerService(armorStandService)
         context.registerService(signService)
+        context.registerService(mirrorService)
+        context.registerService(spawnerEggService)
     }
 
     override fun onDisable() {
@@ -53,6 +63,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         selectionService,
         portalService,
         hologramService,
+        mirrorService,
+        spawnerEggService,
     )
 
     override fun registerCommands(registrar: Commands) {
@@ -61,6 +73,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registerHologramCommands(registrar)
         registerArmorStandCommands(registrar)
         registerSignCommands(registrar)
+        registerWorldAndBuildTools(registrar)
     }
 
     private fun registerSelectionCommands(registrar: Commands) {
@@ -548,5 +561,247 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registrar.register(
             context.plugin.pluginMeta, dsignNode, "Manage placeholder-powered dynamic signs", emptyList()
         )
+    }
+
+    private fun registerWorldAndBuildTools(registrar: Commands) {
+        // /mirror [x|z|xz|rot90|off]
+        val mirrorNode = Commands.literal("mirror")
+            .requires { it.sender.hasPermission("obsidian.command.mirror") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                mirrorService.setSession(player, null)
+                context.locale.send(player, "visual.mirror-off")
+                Command.SINGLE_SUCCESS
+            }
+            .then(Commands.argument("mode", StringArgumentType.word()).suggests { _, b ->
+                listOf("x", "z", "xz", "rot90", "off").filter { it.startsWith(b.remaining, true) }
+                    .forEach { b.suggest(it) }
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val raw = StringArgumentType.getString(ctx, "mode").lowercase()
+                val mode = when (raw) {
+                    "x" -> MirrorMode.X
+                    "z" -> MirrorMode.Z
+                    "xz" -> MirrorMode.XZ
+                    "rot90", "rotate" -> MirrorMode.ROT90
+                    "off", "none", "clear" -> null
+                    else -> {
+                        context.locale.send(player, "general.invalid-usage", "usage" to "/mirror <x|z|xz|rot90|off>")
+                        return@executes 0
+                    }
+                }
+                val session = mirrorService.setSession(player, mode)
+                if (session == null) {
+                    context.locale.send(player, "visual.mirror-off")
+                } else {
+                    context.locale.send(
+                        player,
+                        "visual.mirror-on",
+                        "mode" to session.mode.name,
+                        "x" to session.centerX,
+                        "z" to session.centerZ,
+                    )
+                }
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            mirrorNode,
+            "Toggle symmetric block placement/break mirror",
+            emptyList()
+        )
+
+        // /replaceblock <from> <to>
+        val replaceBlockNode = Commands.literal("replaceblock")
+            .requires { it.sender.hasPermission("obsidian.command.replaceblock") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.argument("from", StringArgumentType.word()).suggests { _, b ->
+                Material.entries.asSequence().filter { it.isBlock }.map { it.name.lowercase() }
+                    .filter { it.startsWith(b.remaining, true) }.take(40).forEach { b.suggest(it) }
+                b.buildFuture()
+            }.then(Commands.argument("to", StringArgumentType.word()).suggests { _, b ->
+                Material.entries.asSequence().filter { it.isBlock }.map { it.name.lowercase() }
+                    .filter { it.startsWith(b.remaining, true) }.take(40).forEach { b.suggest(it) }
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val region = selectionService.getRegion(player) ?: run {
+                    context.locale.send(player, "visual.selection-required")
+                    return@executes 0
+                }
+                if (region.volume() > 50_000L) {
+                    context.locale.send(player, "visual.replaceblock-too-large", "max" to 50_000)
+                    return@executes 0
+                }
+                val fromMat =
+                    Material.matchMaterial(StringArgumentType.getString(ctx, "from"))?.takeIf { it.isBlock } ?: run {
+                        context.locale.send(
+                            player,
+                            "utility.invalid-item",
+                            "item" to StringArgumentType.getString(ctx, "from")
+                        )
+                        return@executes 0
+                    }
+                val toMat =
+                    Material.matchMaterial(StringArgumentType.getString(ctx, "to"))?.takeIf { it.isBlock } ?: run {
+                        context.locale.send(
+                            player,
+                            "utility.invalid-item",
+                            "item" to StringArgumentType.getString(ctx, "to")
+                        )
+                        return@executes 0
+                    }
+                val world = Bukkit.getWorld(region.worldName) ?: return@executes 0
+                var replaced = 0
+                for (x in region.minX..region.maxX) {
+                    for (y in region.minY..region.maxY) {
+                        for (z in region.minZ..region.maxZ) {
+                            val loc = Location(world, x.toDouble(), y.toDouble(), z.toDouble())
+                            context.scheduler.runAtLocation(loc) {
+                                val block = loc.block
+                                if (block.type == fromMat) {
+                                    block.type = toMat
+                                }
+                            }
+                            replaced++
+                        }
+                    }
+                }
+                context.locale.send(
+                    player,
+                    "visual.replaceblock-queued",
+                    "count" to replaced,
+                    "from" to fromMat.name,
+                    "to" to toMat.name
+                )
+                Command.SINGLE_SUCCESS
+            })).build()
+        registrar.register(context.plugin.pluginMeta, replaceBlockNode, "Replace blocks inside selection", emptyList())
+
+        // /spawner <entityType>
+        val spawnerNode = Commands.literal("spawner")
+            .requires { it.sender.hasPermission("obsidian.command.spawner") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.argument("entity", StringArgumentType.word()).suggests { _, b ->
+                EntityType.entries.asSequence().filter { it.isAlive && it.isSpawnable }.map { it.name.lowercase() }
+                    .filter { it.startsWith(b.remaining, true) }.take(40).forEach { b.suggest(it) }
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val targetBlock = player.getTargetBlockExact(8)
+                if (targetBlock == null || targetBlock.type != Material.SPAWNER) {
+                    context.locale.send(player, "visual.spawner-not-found")
+                    return@executes 0
+                }
+                val typeName = StringArgumentType.getString(ctx, "entity")
+                val entityType = runCatching { EntityType.valueOf(typeName.uppercase()) }.getOrNull()
+                    ?.takeIf { it.isAlive && it.isSpawnable }
+                if (entityType == null) {
+                    context.locale.send(player, "visual.spawner-invalid-entity", "entity" to typeName)
+                    return@executes 0
+                }
+                val spawner = targetBlock.state as? CreatureSpawner ?: return@executes 0
+                spawner.spawnedType = entityType
+                spawner.update(true)
+                context.locale.send(player, "visual.spawner-set", "entity" to entityType.name)
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, spawnerNode, "Change target spawner entity type", emptyList())
+
+        // /findbiome <biome>
+        val findBiomeNode = Commands.literal("findbiome")
+            .requires { it.sender.hasPermission("obsidian.command.findbiome") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.argument("biome", StringArgumentType.word()).suggests { _, b ->
+                Registry.BIOME.asSequence().map { it.key.key }
+                    .filter { it.startsWith(b.remaining, true) }.take(40).forEach { b.suggest(it) }
+                b.buildFuture()
+            }.executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val raw = StringArgumentType.getString(ctx, "biome").lowercase()
+                val targetBiome = Registry.BIOME.firstOrNull {
+                    it.key.key.equals(raw, true) || it.key.asString().equals(raw, true)
+                } ?: run {
+                    context.locale.send(player, "visual.biome-invalid", "biome" to raw)
+                    return@executes 0
+                }
+                val startLoc = player.location.clone()
+                val world = startLoc.world ?: return@executes 0
+                context.locale.send(player, "visual.biome-searching", "biome" to targetBiome.key.key)
+                context.scheduler.runAsync {
+                    val step = 64
+                    val maxRadius = 6400
+                    var found: Location? = null
+                    val sx = startLoc.blockX
+                    val sz = startLoc.blockZ
+                    val sy = startLoc.blockY.coerceIn(world.minHeight + 1, world.maxHeight - 1)
+                    outer@ for (r in step..maxRadius step step) {
+                        for (dx in -r..r step step) {
+                            for (dz in listOf(-r, r)) {
+                                if (world.getBiome(sx + dx, sy, sz + dz) == targetBiome) {
+                                    found = Location(world, (sx + dx).toDouble(), sy.toDouble(), (sz + dz).toDouble())
+                                    break@outer
+                                }
+                            }
+                        }
+                        for (dz in (-r + step)..(r - step) step step) {
+                            for (dx in listOf(-r, r)) {
+                                if (world.getBiome(sx + dx, sy, sz + dz) == targetBiome) {
+                                    found = Location(world, (sx + dx).toDouble(), sy.toDouble(), (sz + dz).toDouble())
+                                    break@outer
+                                }
+                            }
+                        }
+                    }
+                    context.scheduler.runForEntity(player) {
+                        if (!player.isOnline) return@runForEntity
+                        if (found == null) {
+                            context.locale.send(player, "visual.biome-not-found", "biome" to targetBiome.key.key)
+                        } else {
+                            context.locale.send(
+                                player,
+                                "visual.biome-found",
+                                "biome" to targetBiome.key.key,
+                                "x" to found.blockX,
+                                "z" to found.blockZ,
+                            )
+                        }
+                    }
+                }
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, findBiomeNode, "Find nearest coordinates of a biome", emptyList())
+
+        // /lfix [radius]
+        val lfixNode = Commands.literal("lfix")
+            .requires { it.sender.hasPermission("obsidian.command.lfix") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                refreshChunksAround(player, 2)
+                Command.SINGLE_SUCCESS
+            }.then(Commands.argument("radius", IntegerArgumentType.integer(1, 8)).executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                refreshChunksAround(player, IntegerArgumentType.getInteger(ctx, "radius"))
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, lfixNode, "Refresh chunk lighting around player", emptyList())
+    }
+
+    private fun refreshChunksAround(player: org.bukkit.entity.Player, chunkRadius: Int) {
+        val center = player.location
+        val world = center.world ?: return
+        val cx = center.blockX shr 4
+        val cz = center.blockZ shr 4
+        var count = 0
+        for (dx in -chunkRadius..chunkRadius) {
+            for (dz in -chunkRadius..chunkRadius) {
+                val tx = cx + dx
+                val tz = cz + dz
+                val chunkLoc = Location(world, (tx shl 4).toDouble(), center.y, (tz shl 4).toDouble())
+                context.scheduler.runAtLocation(chunkLoc) {
+                    world.refreshChunk(tx, tz)
+                }
+                count++
+            }
+        }
+        context.locale.send(player, "visual.lfix-done", "chunks" to count)
     }
 }

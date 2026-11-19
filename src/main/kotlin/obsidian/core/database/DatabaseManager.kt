@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import obsidian.core.config.ObsidianConfig
 import java.io.File
 import java.sql.Connection
+import java.sql.Statement
 
 enum class DatabaseDialect {
     SQLITE,
@@ -146,10 +147,23 @@ class DatabaseManager(
                         `jail_name` VARCHAR(64),
                         `created_at` BIGINT NOT NULL DEFAULT 0,
                         `expires_at` BIGINT,
-                        `active` BOOLEAN NOT NULL DEFAULT TRUE
+                        `active` BOOLEAN NOT NULL DEFAULT TRUE,
+                        `removed_by_uuid` VARCHAR(36),
+                        `removed_by_name` VARCHAR(32),
+                        `removed_at` BIGINT,
+                        `removed_reason` TEXT,
+                        `silent` BOOLEAN NOT NULL DEFAULT FALSE,
+                        `template_id` VARCHAR(64)
                     );
                     """.trimIndent()
                 )
+                val punTable = table("punishments")
+                ensureColumn(st, punTable, "removed_by_uuid", "VARCHAR(36)")
+                ensureColumn(st, punTable, "removed_by_name", "VARCHAR(32)")
+                ensureColumn(st, punTable, "removed_at", "BIGINT")
+                ensureColumn(st, punTable, "removed_reason", "TEXT")
+                ensureColumn(st, punTable, "silent", "BOOLEAN NOT NULL DEFAULT FALSE")
+                ensureColumn(st, punTable, "template_id", "VARCHAR(64)")
                 st.executeUpdate(
                     """
                     CREATE TABLE IF NOT EXISTS `${table("player_ips")}` (
@@ -258,6 +272,25 @@ class DatabaseManager(
                     );
                     """.trimIndent()
                 )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("name_history")}` (
+                        `id` $autoIncId,
+                        `uuid` VARCHAR(36) NOT NULL,
+                        `username` VARCHAR(32) NOT NULL,
+                        `changed_at` BIGINT NOT NULL
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("punishment_allow")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `added_by` VARCHAR(32) NOT NULL,
+                        `created_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
                 if (dialect == DatabaseDialect.SQLITE) {
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}users_name` ON `${table("users")}` (`username`);"
@@ -267,6 +300,15 @@ class DatabaseManager(
                     )
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}punishments_ip` ON `${table("punishments")}` (`target_ip`, `type`, `active`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}punishments_actor` ON `${table("punishments")}` (`actor_uuid`, `active`, `created_at`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}name_history_uuid` ON `${table("name_history")}` (`uuid`, `changed_at`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}name_history_name` ON `${table("name_history")}` (`username`);"
                     )
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}ips_ip` ON `${table("player_ips")}` (`ip`);"
@@ -293,6 +335,40 @@ class DatabaseManager(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_messages_actor` ON `${table("protect_messages")}` (`actor`, `time`);"
                     )
                 }
+            }
+        }
+    }
+
+    private fun ensureColumn(
+        st: Statement,
+        tableName: String,
+        columnName: String,
+        columnDef: String,
+    ) {
+        var exists = false
+        if (dialect == DatabaseDialect.SQLITE) {
+            runCatching {
+                st.executeQuery("PRAGMA table_info(`$tableName`);").use { rs ->
+                    while (rs.next()) {
+                        if (rs.getString("name").equals(columnName, ignoreCase = true)) {
+                            exists = true
+                            break
+                        }
+                    }
+                }
+            }
+        } else {
+            runCatching {
+                st.executeQuery(
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_NAME = '$tableName' AND COLUMN_NAME = '$columnName';"
+                ).use { rs ->
+                    if (rs.next()) exists = true
+                }
+            }
+        }
+        if (!exists) {
+            runCatching {
+                st.executeUpdate("ALTER TABLE `$tableName` ADD COLUMN `$columnName` $columnDef;")
             }
         }
     }

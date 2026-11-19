@@ -61,6 +61,8 @@ class ObsidianScheduler(private val plugin: Plugin) {
         Bukkit.getRegionScheduler().execute(plugin, location, task)
     }
 
+    fun runForLocation(location: Location, task: () -> Unit) = runAtLocation(location, task)
+
     fun runForEntity(entity: Entity, retired: (() -> Unit)? = null, task: () -> Unit): Boolean {
         if (!plugin.isEnabled) return false
         return entity.scheduler.execute(plugin, task, retired, 1L)

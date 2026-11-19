@@ -214,5 +214,63 @@ class KitModule(private val context: ObsidianContext) : ObsidianModule {
             ).build()
 
         registrar.register(context.plugin.pluginMeta, editorNode, "Create or modify server kits", emptyList())
+
+        val cdResetNode = Commands.literal("kitcdreset")
+            .requires { it.sender.hasPermission("obsidian.command.kitcdreset") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("target", ArgumentTypes.player()).then(
+                    Commands.argument("kit", StringArgumentType.word()).suggests { _, b ->
+                        kitService.getAllKits().map { it.name }.filter { it.startsWith(b.remaining, true) }
+                            .forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
+                        val kitName = StringArgumentType.getString(ctx, "kit")
+                        val kit = kitService.getKit(kitName) ?: run {
+                            context.locale.send(ctx.source.sender, "kit.not-found", "kit" to kitName)
+                            return@executes 0
+                        }
+                        kitService.resetCooldown(target.uniqueId, kit.name)
+                        context.locale.send(
+                            ctx.source.sender,
+                            "kit.cd-reset",
+                            "target" to target.name,
+                            "kit" to kit.name
+                        )
+                        Command.SINGLE_SUCCESS
+                    }
+                )).build()
+        registrar.register(context.plugin.pluginMeta, cdResetNode, "Reset a player's kit cooldown", emptyList())
+
+        val usageResetNode = Commands.literal("kitusagereset")
+            .requires { it.sender.hasPermission("obsidian.command.kitusagereset") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("target", ArgumentTypes.player()).then(
+                    Commands.argument("kit", StringArgumentType.word()).suggests { _, b ->
+                        kitService.getAllKits().map { it.name }.filter { it.startsWith(b.remaining, true) }
+                            .forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source)
+                                .firstOrNull() ?: return@executes 0
+                        val kitName = StringArgumentType.getString(ctx, "kit")
+                        val kit = kitService.getKit(kitName) ?: run {
+                            context.locale.send(ctx.source.sender, "kit.not-found", "kit" to kitName)
+                            return@executes 0
+                        }
+                        kitService.resetUsage(target.uniqueId, kit.name)
+                        context.locale.send(
+                            ctx.source.sender,
+                            "kit.usage-reset",
+                            "target" to target.name,
+                            "kit" to kit.name
+                        )
+                        Command.SINGLE_SUCCESS
+                    }
+                )).build()
+        registrar.register(context.plugin.pluginMeta, usageResetNode, "Reset a player's kit usage count", emptyList())
     }
 }

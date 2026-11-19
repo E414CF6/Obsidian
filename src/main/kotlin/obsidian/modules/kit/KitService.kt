@@ -289,6 +289,36 @@ class KitService(private val context: ObsidianContext) : Listener {
         claims.remove(event.player.uniqueId)
     }
 
+    fun resetCooldown(uuid: UUID, kitName: String) {
+        val map = claims[uuid]
+        val existing = map?.get(kitName.lowercase())
+        if (existing != null) {
+            val updated = existing.copy(lastClaimedAt = 0L)
+            map[kitName.lowercase()] = updated
+            context.scheduler.asyncScope.launch { context.kitClaimRepository.upsert(updated) }
+        } else {
+            context.scheduler.asyncScope.launch {
+                val loaded = context.kitClaimRepository.findByUuid(uuid)[kitName.lowercase()] ?: return@launch
+                context.kitClaimRepository.upsert(loaded.copy(lastClaimedAt = 0L))
+            }
+        }
+    }
+
+    fun resetUsage(uuid: UUID, kitName: String) {
+        val map = claims[uuid]
+        val existing = map?.get(kitName.lowercase())
+        if (existing != null) {
+            val updated = existing.copy(claimCount = 0)
+            map[kitName.lowercase()] = updated
+            context.scheduler.asyncScope.launch { context.kitClaimRepository.upsert(updated) }
+        } else {
+            context.scheduler.asyncScope.launch {
+                val loaded = context.kitClaimRepository.findByUuid(uuid)[kitName.lowercase()] ?: return@launch
+                context.kitClaimRepository.upsert(loaded.copy(claimCount = 0))
+            }
+        }
+    }
+
     sealed interface ClaimResult {
         data object Claimed : ClaimResult
         data object NoPermission : ClaimResult

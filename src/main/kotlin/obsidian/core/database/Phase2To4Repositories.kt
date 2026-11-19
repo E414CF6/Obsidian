@@ -42,8 +42,10 @@ enum class PunishmentType {
     BAN,
     IP_BAN,
     MUTE,
+    IP_MUTE,
     SHADOW_MUTE,
     WARN,
+    KICK,
     JAIL,
 }
 
@@ -60,10 +62,29 @@ data class PunishmentRecord(
     val createdAt: Long = System.currentTimeMillis(),
     val expiresAt: Long? = null,
     val active: Boolean = true,
+    val removedByUuid: UUID? = null,
+    val removedByName: String? = null,
+    val removedAt: Long? = null,
+    val removedReason: String? = null,
+    val silent: Boolean = false,
+    val templateId: String? = null,
 ) {
     fun isExpired(now: Long = System.currentTimeMillis()): Boolean =
         expiresAt != null && expiresAt <= now
 }
+
+data class NameHistoryRecord(
+    val id: Long = 0,
+    val uuid: UUID,
+    val username: String,
+    val changedAt: Long,
+)
+
+data class PunishmentAllowRecord(
+    val uuid: UUID,
+    val addedBy: String,
+    val createdAt: Long,
+)
 
 data class PlayerIpRecord(
     val uuid: UUID,
@@ -386,11 +407,17 @@ class PunishmentRepository(private val db: DatabaseManager) {
 
     private val punishmentsTable = db.table("punishments")
     private val ipsTable = db.table("player_ips")
+    private val nameHistoryTable = db.table("name_history")
+    private val allowTable = db.table("punishment_allow")
 
     suspend fun insert(record: PunishmentRecord) {
         val sql = """
-            INSERT INTO `$punishmentsTable` (`id`, `type`, `target_uuid`, `target_name`, `target_ip`, `actor_uuid`, `actor_name`, `reason`, `jail_name`, `created_at`, `expires_at`, `active`)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            INSERT INTO `$punishmentsTable` (
+                `id`, `type`, `target_uuid`, `target_name`, `target_ip`, `actor_uuid`, `actor_name`,
+                `reason`, `jail_name`, `created_at`, `expires_at`, `active`,
+                `removed_by_uuid`, `removed_by_name`, `removed_at`, `removed_reason`, `silent`, `template_id`
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """.trimIndent()
         db.query { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -406,41 +433,93 @@ class PunishmentRepository(private val db: DatabaseManager) {
                 ps.setLong(10, record.createdAt)
                 if (record.expiresAt != null) ps.setLong(11, record.expiresAt) else ps.setNull(11, Types.BIGINT)
                 ps.setBoolean(12, record.active)
+                ps.setString(13, record.removedByUuid?.toString())
+                ps.setString(14, record.removedByName)
+                if (record.removedAt != null) ps.setLong(15, record.removedAt) else ps.setNull(15, Types.BIGINT)
+                ps.setString(16, record.removedReason)
+                ps.setBoolean(17, record.silent)
+                ps.setString(18, record.templateId)
                 ps.executeUpdate()
             }
         }
     }
 
-    suspend fun deactivate(id: String) {
+    suspend fun deactivate(
+        id: String,
+        actorUuid: UUID? = null,
+        actorName: String? = null,
+        reason: String? = null,
+    ) {
+        val now = System.currentTimeMillis()
         db.query { conn ->
-            conn.prepareStatement("UPDATE `$punishmentsTable` SET `active` = FALSE WHERE `id` = ?;").use { ps ->
-                ps.setString(1, id)
+            conn.prepareStatement(
+                "UPDATE `$punishmentsTable` SET `active` = FALSE, `removed_by_uuid` = ?, `removed_by_name` = ?, `removed_at` = ?, `removed_reason` = ? WHERE `id` = ?;"
+            ).use { ps ->
+                ps.setString(1, actorUuid?.toString())
+                ps.setString(2, actorName)
+                ps.setLong(3, now)
+                ps.setString(4, reason)
+                ps.setString(5, id)
                 ps.executeUpdate()
             }
         }
     }
 
-    suspend fun deactivateForTarget(type: PunishmentType, targetUuid: UUID?, targetIp: String? = null): Int =
-        db.query { conn ->
-            var changed = 0
-            if (targetUuid != null) {
-                conn.prepareStatement("UPDATE `$punishmentsTable` SET `active` = FALSE WHERE `type` = ? AND `target_uuid` = ? AND `active` = TRUE;")
-                    .use { ps ->
-                        ps.setString(1, type.name)
-                        ps.setString(2, targetUuid.toString())
-                        changed += ps.executeUpdate()
-                    }
+    suspend fun deactivateForTarget(
+        type: PunishmentType,
+        targetUuid: UUID?,
+        targetIp: String? = null,
+        actorUuid: UUID? = null,
+        actorName: String? = null,
+        reason: String? = null,
+    ): Int = db.query { conn ->
+        var changed = 0
+        val now = System.currentTimeMillis()
+        if (targetUuid != null) {
+            conn.prepareStatement(
+                "UPDATE `$punishmentsTable` SET `active` = FALSE, `removed_by_uuid` = ?, `removed_by_name` = ?, `removed_at` = ?, `removed_reason` = ? WHERE `type` = ? AND `target_uuid` = ? AND `active` = TRUE;"
+            ).use { ps ->
+                ps.setString(1, actorUuid?.toString())
+                ps.setString(2, actorName)
+                ps.setLong(3, now)
+                ps.setString(4, reason)
+                ps.setString(5, type.name)
+                ps.setString(6, targetUuid.toString())
+                changed += ps.executeUpdate()
             }
-            if (targetIp != null) {
-                conn.prepareStatement("UPDATE `$punishmentsTable` SET `active` = FALSE WHERE `type` = ? AND `target_ip` = ? AND `active` = TRUE;")
-                    .use { ps ->
-                        ps.setString(1, type.name)
-                        ps.setString(2, targetIp)
-                        changed += ps.executeUpdate()
-                    }
-            }
-            changed
         }
+        if (targetIp != null) {
+            conn.prepareStatement(
+                "UPDATE `$punishmentsTable` SET `active` = FALSE, `removed_by_uuid` = ?, `removed_by_name` = ?, `removed_at` = ?, `removed_reason` = ? WHERE `type` = ? AND `target_ip` = ? AND `active` = TRUE;"
+            ).use { ps ->
+                ps.setString(1, actorUuid?.toString())
+                ps.setString(2, actorName)
+                ps.setLong(3, now)
+                ps.setString(4, reason)
+                ps.setString(5, type.name)
+                ps.setString(6, targetIp)
+                changed += ps.executeUpdate()
+            }
+        }
+        changed
+    }
+
+    suspend fun updatePunishment(
+        id: String,
+        reason: String? = null,
+        expiresAt: Long? = null,
+        silent: Boolean? = null,
+    ): Boolean = db.query { conn ->
+        val sql =
+            "UPDATE `$punishmentsTable` SET `reason` = COALESCE(?, `reason`), `expires_at` = COALESCE(?, `expires_at`), `silent` = COALESCE(?, `silent`) WHERE `id` = ? AND `active` = TRUE;"
+        conn.prepareStatement(sql).use { ps ->
+            ps.setString(1, reason)
+            if (expiresAt != null) ps.setLong(2, expiresAt) else ps.setNull(2, Types.BIGINT)
+            if (silent != null) ps.setBoolean(3, silent) else ps.setNull(3, Types.BOOLEAN)
+            ps.setString(4, id)
+            ps.executeUpdate() > 0
+        }
+    }
 
     suspend fun findActive(targetUuid: UUID?, targetIp: String?, vararg types: PunishmentType): List<PunishmentRecord> {
         if (types.isEmpty()) return emptyList()
@@ -486,6 +565,340 @@ class PunishmentRepository(private val db: DatabaseManager) {
                     list
                 }
             }
+        }
+    }
+
+    suspend fun findActiveByIpWildcard(ip: String, vararg types: PunishmentType): List<PunishmentRecord> {
+        if (types.isEmpty()) return emptyList()
+        val typePlaceholders = types.joinToString(",") { "?" }
+        val sql =
+            "SELECT * FROM `$punishmentsTable` WHERE `active` = TRUE AND `type` IN ($typePlaceholders) AND `target_ip` IS NOT NULL ORDER BY `created_at` DESC;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                for (t in types) ps.setString(idx++, t.name)
+                ps.executeQuery().use { rs ->
+                    val list = mutableListOf<PunishmentRecord>()
+                    while (rs.next()) {
+                        val rec = mapPunishment(rs)
+                        val targetIp = rec.targetIp
+                        if (targetIp != null && ipMatches(targetIp, ip)) {
+                            list += rec
+                        }
+                    }
+                    list
+                }
+            }
+        }
+    }
+
+    fun ipMatches(pattern: String, ip: String): Boolean {
+        if (pattern == ip) return true
+        if (!pattern.contains("*")) return false
+        val regexPattern = "^" + pattern.split("*").joinToString(".*") { Regex.escape(it) } + "$"
+        return Regex(regexPattern).matches(ip)
+    }
+
+    suspend fun findHistory(
+        targetUuid: UUID? = null,
+        targetIp: String? = null,
+        limit: Int = 10,
+        offset: Int = 0,
+        type: PunishmentType? = null,
+    ): List<PunishmentRecord> {
+        val conditions = mutableListOf<String>()
+        if (targetUuid != null) conditions += "`target_uuid` = ?"
+        if (targetIp != null) conditions += "`target_ip` = ?"
+        if (type != null) conditions += "`type` = ?"
+        val where = if (conditions.isNotEmpty()) "WHERE ${conditions.joinToString(" AND ")}" else ""
+        val sql = "SELECT * FROM `$punishmentsTable` $where ORDER BY `created_at` DESC LIMIT ? OFFSET ?;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                if (targetUuid != null) ps.setString(idx++, targetUuid.toString())
+                if (targetIp != null) ps.setString(idx++, targetIp)
+                if (type != null) ps.setString(idx++, type.name)
+                ps.setInt(idx++, limit)
+                ps.setInt(idx, offset)
+                ps.executeQuery().use { rs ->
+                    val list = mutableListOf<PunishmentRecord>()
+                    while (rs.next()) list += mapPunishment(rs)
+                    list
+                }
+            }
+        }
+    }
+
+    suspend fun countHistory(
+        targetUuid: UUID? = null,
+        targetIp: String? = null,
+        type: PunishmentType? = null,
+    ): Int {
+        val conditions = mutableListOf<String>()
+        if (targetUuid != null) conditions += "`target_uuid` = ?"
+        if (targetIp != null) conditions += "`target_ip` = ?"
+        if (type != null) conditions += "`type` = ?"
+        val where = if (conditions.isNotEmpty()) "WHERE ${conditions.joinToString(" AND ")}" else ""
+        val sql = "SELECT COUNT(*) FROM `$punishmentsTable` $where;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                if (targetUuid != null) ps.setString(idx++, targetUuid.toString())
+                if (targetIp != null) ps.setString(idx++, targetIp)
+                if (type != null) ps.setString(idx, type.name)
+                ps.executeQuery().use { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+            }
+        }
+    }
+
+    suspend fun findStaffHistory(
+        actorUuid: UUID?,
+        actorName: String?,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): List<PunishmentRecord> {
+        val conditions = mutableListOf<String>()
+        if (actorUuid != null) conditions += "`actor_uuid` = ?"
+        if (actorName != null) conditions += "LOWER(`actor_name`) = LOWER(?)"
+        if (conditions.isEmpty()) return emptyList()
+        val sql =
+            "SELECT * FROM `$punishmentsTable` WHERE (${conditions.joinToString(" OR ")}) ORDER BY `created_at` DESC LIMIT ? OFFSET ?;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                if (actorUuid != null) ps.setString(idx++, actorUuid.toString())
+                if (actorName != null) ps.setString(idx++, actorName)
+                ps.setInt(idx++, limit)
+                ps.setInt(idx, offset)
+                ps.executeQuery().use { rs ->
+                    val list = mutableListOf<PunishmentRecord>()
+                    while (rs.next()) list += mapPunishment(rs)
+                    list
+                }
+            }
+        }
+    }
+
+    suspend fun countStaffHistory(actorUuid: UUID?, actorName: String?): Int {
+        val conditions = mutableListOf<String>()
+        if (actorUuid != null) conditions += "`actor_uuid` = ?"
+        if (actorName != null) conditions += "LOWER(`actor_name`) = LOWER(?)"
+        if (conditions.isEmpty()) return 0
+        val sql = "SELECT COUNT(*) FROM `$punishmentsTable` WHERE (${conditions.joinToString(" OR ")});"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                if (actorUuid != null) ps.setString(idx++, actorUuid.toString())
+                if (actorName != null) ps.setString(idx, actorName)
+                ps.executeQuery().use { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+            }
+        }
+    }
+
+    suspend fun rollbackByStaff(
+        actorUuid: UUID?,
+        actorName: String?,
+        sinceMillis: Long,
+        removedBy: String,
+    ): Int {
+        val now = System.currentTimeMillis()
+        val conditions = mutableListOf<String>()
+        if (actorUuid != null) conditions += "`actor_uuid` = ?"
+        if (actorName != null) conditions += "LOWER(`actor_name`) = LOWER(?)"
+        if (conditions.isEmpty()) return 0
+        val sql =
+            "UPDATE `$punishmentsTable` SET `active` = FALSE, `removed_by_name` = ?, `removed_at` = ?, `removed_reason` = 'Staff rollback' WHERE `active` = TRUE AND `created_at` >= ? AND (${
+                conditions.joinToString(" OR ")
+            });"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                ps.setString(idx++, removedBy)
+                ps.setLong(idx++, now)
+                ps.setLong(idx++, sinceMillis)
+                if (actorUuid != null) ps.setString(idx++, actorUuid.toString())
+                if (actorName != null) ps.setString(idx, actorName)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun pruneHistory(targetUuid: UUID? = null, targetIp: String? = null, beforeMillis: Long? = null): Int {
+        val conditions = mutableListOf<String>()
+        if (targetUuid != null) conditions += "`target_uuid` = ?"
+        if (targetIp != null) conditions += "`target_ip` = ?"
+        val targetCond = if (conditions.isNotEmpty()) "AND (${conditions.joinToString(" OR ")})" else ""
+        val timeCond = if (beforeMillis != null) "AND `created_at` < ?" else ""
+        val sql = "DELETE FROM `$punishmentsTable` WHERE `active` = FALSE $timeCond $targetCond;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                if (beforeMillis != null) ps.setLong(idx++, beforeMillis)
+                if (targetUuid != null) ps.setString(idx++, targetUuid.toString())
+                if (targetIp != null) ps.setString(idx, targetIp)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun listActive(
+        types: List<PunishmentType>,
+        limit: Int = 10,
+        offset: Int = 0,
+    ): List<PunishmentRecord> {
+        if (types.isEmpty()) return emptyList()
+        val typePlaceholders = types.joinToString(",") { "?" }
+        val sql =
+            "SELECT * FROM `$punishmentsTable` WHERE `active` = TRUE AND `type` IN ($typePlaceholders) ORDER BY `created_at` DESC LIMIT ? OFFSET ?;"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                for (t in types) ps.setString(idx++, t.name)
+                ps.setInt(idx++, limit)
+                ps.setInt(idx, offset)
+                ps.executeQuery().use { rs ->
+                    val list = mutableListOf<PunishmentRecord>()
+                    while (rs.next()) list += mapPunishment(rs)
+                    list
+                }
+            }
+        }
+    }
+
+    suspend fun countActive(types: List<PunishmentType>): Int {
+        if (types.isEmpty()) return 0
+        val typePlaceholders = types.joinToString(",") { "?" }
+        val sql = "SELECT COUNT(*) FROM `$punishmentsTable` WHERE `active` = TRUE AND `type` IN ($typePlaceholders);"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                for (t in types) ps.setString(idx++, t.name)
+                ps.executeQuery().use { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+            }
+        }
+    }
+
+    suspend fun countTemplateStrikes(
+        targetUuid: UUID?,
+        targetIp: String?,
+        templateId: String,
+        sinceMillis: Long,
+        boundToIp: Boolean,
+    ): Int {
+        val conditions = mutableListOf<String>()
+        if (targetUuid != null) conditions += "`target_uuid` = ?"
+        if (boundToIp && targetIp != null) conditions += "`target_ip` = ?"
+        if (conditions.isEmpty()) return 0
+        val sql = "SELECT COUNT(*) FROM `$punishmentsTable` WHERE `template_id` = ? AND `created_at` >= ? AND (${
+            conditions.joinToString(" OR ")
+        });"
+        return db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                var idx = 1
+                ps.setString(idx++, templateId)
+                ps.setLong(idx++, sinceMillis)
+                if (targetUuid != null) ps.setString(idx++, targetUuid.toString())
+                if (boundToIp && targetIp != null) ps.setString(idx, targetIp)
+                ps.executeQuery().use { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+            }
+        }
+    }
+
+    suspend fun recordNameHistory(uuid: UUID, username: String, timestamp: Long = System.currentTimeMillis()) {
+        val last = db.query { conn ->
+            conn.prepareStatement("SELECT `username` FROM `$nameHistoryTable` WHERE `uuid` = ? ORDER BY `changed_at` DESC LIMIT 1;")
+                .use { ps ->
+                    ps.setString(1, uuid.toString())
+                    ps.executeQuery().use { rs ->
+                        if (rs.next()) rs.getString("username") else null
+                    }
+                }
+        }
+        if (last == null || !last.equals(username, ignoreCase = true)) {
+            val sql = "INSERT INTO `$nameHistoryTable` (`uuid`, `username`, `changed_at`) VALUES (?, ?, ?);"
+            db.query { conn ->
+                conn.prepareStatement(sql).use { ps ->
+                    ps.setString(1, uuid.toString())
+                    ps.setString(2, username)
+                    ps.setLong(3, timestamp)
+                    ps.executeUpdate()
+                }
+            }
+        }
+    }
+
+    suspend fun findNameHistory(uuid: UUID): List<NameHistoryRecord> = db.query { conn ->
+        conn.prepareStatement("SELECT * FROM `$nameHistoryTable` WHERE `uuid` = ? ORDER BY `changed_at` DESC;")
+            .use { ps ->
+                ps.setString(1, uuid.toString())
+                ps.executeQuery().use { rs ->
+                    val list = mutableListOf<NameHistoryRecord>()
+                    while (rs.next()) {
+                        list += NameHistoryRecord(
+                            id = rs.getLong("id"),
+                            uuid = UUID.fromString(rs.getString("uuid")),
+                            username = rs.getString("username"),
+                            changedAt = rs.getLong("changed_at"),
+                        )
+                    }
+                    list
+                }
+            }
+    }
+
+    suspend fun findLastUuid(username: String): UUID? = db.query { conn ->
+        conn.prepareStatement("SELECT `uuid` FROM `$nameHistoryTable` WHERE LOWER(`username`) = LOWER(?) ORDER BY `changed_at` DESC LIMIT 1;")
+            .use { ps ->
+                ps.setString(1, username)
+                ps.executeQuery().use { rs ->
+                    if (rs.next()) UUID.fromString(rs.getString("uuid")) else null
+                }
+            }
+    }
+
+    suspend fun addAllow(uuid: UUID, addedBy: String, timestamp: Long = System.currentTimeMillis()) {
+        val sql = when (db.dialect) {
+            DatabaseDialect.SQLITE -> """
+                INSERT INTO `$allowTable` (`uuid`, `added_by`, `created_at`)
+                VALUES (?, ?, ?)
+                ON CONFLICT(`uuid`) DO UPDATE SET `added_by` = excluded.`added_by`, `created_at` = excluded.`created_at`;
+            """.trimIndent()
+
+            DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
+                INSERT INTO `$allowTable` (`uuid`, `added_by`, `created_at`)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE `added_by` = VALUES(`added_by`), `created_at` = VALUES(`created_at`);
+            """.trimIndent()
+        }
+        db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, uuid.toString())
+                ps.setString(2, addedBy)
+                ps.setLong(3, timestamp)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun removeAllow(uuid: UUID): Boolean = db.query { conn ->
+        conn.prepareStatement("DELETE FROM `$allowTable` WHERE `uuid` = ?;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeUpdate() > 0
+        }
+    }
+
+    suspend fun isAllowed(uuid: UUID): Boolean = db.query { conn ->
+        conn.prepareStatement("SELECT 1 FROM `$allowTable` WHERE `uuid` = ? LIMIT 1;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeQuery().use { rs -> rs.next() }
         }
     }
 
@@ -543,6 +956,14 @@ class PunishmentRepository(private val db: DatabaseManager) {
     private fun mapPunishment(rs: ResultSet): PunishmentRecord {
         val expRaw = rs.getLong("expires_at")
         val expiresAt = if (rs.wasNull()) null else expRaw
+        val remRaw = runCatching { rs.getLong("removed_at") }.getOrNull() ?: 0L
+        val removedAt = if (remRaw == 0L) null else remRaw
+        val removedByUuid = runCatching { rs.getString("removed_by_uuid")?.let(UUID::fromString) }.getOrNull()
+        val removedByName = runCatching { rs.getString("removed_by_name") }.getOrNull()
+        val removedReason = runCatching { rs.getString("removed_reason") }.getOrNull()
+        val silent = runCatching { rs.getBoolean("silent") }.getOrDefault(false)
+        val templateId = runCatching { rs.getString("template_id") }.getOrNull()
+
         return PunishmentRecord(
             id = rs.getString("id"),
             type = PunishmentType.valueOf(rs.getString("type")),
@@ -556,6 +977,12 @@ class PunishmentRepository(private val db: DatabaseManager) {
             createdAt = rs.getLong("created_at"),
             expiresAt = expiresAt,
             active = rs.getBoolean("active"),
+            removedByUuid = removedByUuid,
+            removedByName = removedByName,
+            removedAt = removedAt,
+            removedReason = removedReason,
+            silent = silent,
+            templateId = templateId,
         )
     }
 
