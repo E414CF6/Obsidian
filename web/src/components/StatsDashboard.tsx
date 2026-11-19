@@ -1,6 +1,6 @@
 "use client";
 
-import React, {useCallback, useEffect, useMemo, useState} from "react";
+import React, {useCallback, useEffect, useMemo, useState, useSyncExternalStore} from "react";
 import {Activity, Database, Monitor, Moon, RefreshCw, Search, Sparkles, Sun, Trophy, X} from "lucide-react";
 import {LeaderboardMetric, PlayerSummary, StatsApiResponse} from "@/types/stats";
 import {resolveServerMeta} from "@/lib/formatters";
@@ -9,6 +9,43 @@ import {LeaderboardSection} from "@/components/stats/LeaderboardSection";
 import {PlayerDetailModal} from "@/components/stats/PlayerDetailModal";
 
 type ThemeMode = "light" | "dark" | "system";
+
+const THEME_EVENT = "obsidian-theme-change";
+
+function readStoredThemeMode(): ThemeMode {
+    if (typeof window === "undefined") return "system";
+    const saved = localStorage.getItem("obsidian-theme") || localStorage.getItem("everest-theme");
+    return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+}
+
+function subscribeThemeMode(onStoreChange: () => void): () => void {
+    window.addEventListener("storage", onStoreChange);
+    window.addEventListener(THEME_EVENT, onStoreChange);
+    return () => {
+        window.removeEventListener("storage", onStoreChange);
+        window.removeEventListener(THEME_EVENT, onStoreChange);
+    };
+}
+
+function subscribeSystemDark(onStoreChange: () => void): () => void {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    mediaQuery.addEventListener("change", onStoreChange);
+    return () => mediaQuery.removeEventListener("change", onStoreChange);
+}
+
+function getSystemDarkSnapshot(): boolean {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+async function requestStats(apiBase: string, isManualRefresh: boolean): Promise<StatsApiResponse> {
+    const url = isManualRefresh ? `${apiBase}/api/stats?refresh=true` : `${apiBase}/api/stats`;
+    const res = await fetch(url, {cache: "no-store"});
+    if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.details || errJson.error || `HTTP ${res.status}`);
+    }
+    return (await res.json()) as StatsApiResponse;
+}
 
 export default function StatsDashboard() {
     const [data, setData] = useState<StatsApiResponse | null>(null);
@@ -20,40 +57,30 @@ export default function StatsDashboard() {
     const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
     const [leaderboardMetric, setLeaderboardMetric] = useState<LeaderboardMetric>("playtime");
 
-    const [themeMode, setThemeMode] = useState<ThemeMode>("system");
-    const [isDark, setIsDark] = useState<boolean>(true);
+    const themeMode = useSyncExternalStore<ThemeMode>(subscribeThemeMode, readStoredThemeMode, () => "system");
+    const systemPrefersDark = useSyncExternalStore(subscribeSystemDark, getSystemDarkSnapshot, () => true);
+    const isDark = themeMode === "dark" || (themeMode === "system" && systemPrefersDark);
 
-    useEffect(() => {
-        const saved = (localStorage.getItem("obsidian-theme") ||
-            localStorage.getItem("everest-theme")) as ThemeMode | null;
-        if (saved === "light" || saved === "dark" || saved === "system") {
-            setThemeMode(saved);
-        }
+    const setThemeMode = useCallback((mode: ThemeMode) => {
+        localStorage.setItem("obsidian-theme", mode);
+        window.dispatchEvent(new Event(THEME_EVENT));
     }, []);
 
     useEffect(() => {
-        const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-        const applyTheme = (mode: ThemeMode) => {
-            const resolvedDark = mode === "dark" || (mode === "system" && mediaQuery.matches);
-            setIsDark(resolvedDark);
-            document.documentElement.classList.toggle("dark", resolvedDark);
-        };
-
-        applyTheme(themeMode);
-        localStorage.setItem("obsidian-theme", themeMode);
-
-        const handleSystemChange = () => {
-            if (themeMode === "system") {
-                applyTheme("system");
-            }
-        };
-
-        mediaQuery.addEventListener("change", handleSystemChange);
-        return () => mediaQuery.removeEventListener("change", handleSystemChange);
-    }, [themeMode]);
+        document.documentElement.classList.toggle("dark", isDark);
+    }, [isDark]);
 
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+    const applyStatsPayload = useCallback((json: StatsApiResponse) => {
+        setData(json);
+        setSelectedUuid((prev) => {
+            if (prev && json.players.some((p) => p.uuid === prev)) {
+                return prev;
+            }
+            return null;
+        });
+    }, []);
 
     const fetchStats = useCallback(
         async (isManualRefresh = false) => {
@@ -64,24 +91,8 @@ export default function StatsDashboard() {
                     setLoading(true);
                 }
                 setError(null);
-
-                const url = isManualRefresh ? `${apiBase}/api/stats?refresh=true` : `${apiBase}/api/stats`;
-                const res = await fetch(url, {cache: "no-store"});
-
-                if (!res.ok) {
-                    const errJson = await res.json().catch(() => ({}));
-                    throw new Error(errJson.details || errJson.error || `HTTP ${res.status}`);
-                }
-
-                const json = (await res.json()) as StatsApiResponse;
-                setData(json);
-
-                setSelectedUuid((prev) => {
-                    if (prev && json.players.some((p) => p.uuid === prev)) {
-                        return prev;
-                    }
-                    return null;
-                });
+                const json = await requestStats(apiBase, isManualRefresh);
+                applyStatsPayload(json);
             } catch (err) {
                 setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다.");
             } finally {
@@ -89,16 +100,37 @@ export default function StatsDashboard() {
                 setRefreshing(false);
             }
         },
-        [apiBase],
+        [apiBase, applyStatsPayload],
     );
 
     useEffect(() => {
-        fetchStats(false);
+        let cancelled = false;
+        requestStats(apiBase, false)
+            .then((json) => {
+                if (!cancelled) {
+                    setError(null);
+                    applyStatsPayload(json);
+                }
+            })
+            .catch((err) => {
+                if (!cancelled) {
+                    setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다.");
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            });
+
         const timer = setInterval(() => {
-            fetchStats(false);
+            void fetchStats(false);
         }, 30000);
-        return () => clearInterval(timer);
-    }, [fetchStats]);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [apiBase, applyStatsPayload, fetchStats]);
 
     const meta = useMemo(() => resolveServerMeta(data?.meta), [data?.meta]);
 
@@ -236,10 +268,13 @@ export default function StatsDashboard() {
                         <Search
                             className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"/>
                         <input
+                            id="player-search"
+                            name="q"
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="플레이어 / UUID 검색..."
+                            aria-label="플레이어 또는 UUID 검색"
                             className="w-full pl-9 pr-7 py-1.5 rounded-full bg-slate-100/90 dark:bg-slate-950/80 border border-slate-200/80 dark:border-slate-800 text-base sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 transition"
                         />
                         {searchQuery && (
