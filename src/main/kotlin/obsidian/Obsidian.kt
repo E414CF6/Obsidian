@@ -12,6 +12,7 @@ import obsidian.modules.economy.EconomyModule
 import obsidian.modules.home.HomeModule
 import obsidian.modules.interaction.InteractionModule
 import obsidian.modules.kit.KitModule
+import obsidian.modules.mobfarm.MobFarmModule
 import obsidian.modules.moderation.ModerationModule
 import obsidian.modules.playtime.PlayTimeModule
 import obsidian.modules.protect.ProtectModule
@@ -63,6 +64,7 @@ class ObsidianPlugin : JavaPlugin() {
         val proxyModule = ProxyModule(ctx)
         val protectModule = ProtectModule(ctx)
         val statsModule = StatsModule(ctx)
+        val mobFarmModule = MobFarmModule(ctx)
 
         ctx.modules.register(teleportModule)
         ctx.modules.register(homeModule)
@@ -79,6 +81,7 @@ class ObsidianPlugin : JavaPlugin() {
         ctx.modules.register(proxyModule)
         ctx.modules.register(protectModule)
         ctx.modules.register(statsModule)
+        ctx.modules.register(mobFarmModule)
 
         ctx.modules.enableAll()
 

@@ -88,3 +88,53 @@ permissions:
   obsidian.stats.admin:
     description: Grants access to /serve and /stats web API management commands
     default: op
+  obsidian.mobfarm.command:
+    description: Grants access to /mfm base command
+    default: op
+  obsidian.mobfarm.command.clean:
+    description: Grants access to /mfm clean and /mobclean
+    default: op
+  obsidian.mobfarm.command.list:
+    description: Grants access to /mfm list and /mobreport
+    default: op
+  obsidian.mobfarm.command.limits:
+    description: Grants access to /mfm limits
+    default: op
+  obsidian.mobfarm.command.limits.full:
+    description: Shows exact entity counts and limits in /mfm limits
+    default: op
+  obsidian.mobfarm.command.hoppers:
+    description: Grants access to /mfm hoppers
+    default: op
+  obsidian.mobfarm.command.redstone:
+    description: Grants access to /mfm redstone
+    default: op
+  obsidian.mobfarm.command.reload:
+    description: Grants access to /mfm reload
+    default: op
+  obsidian.mobfarm.cleaninform:
+    description: Receives automatic mob farm cleanup summaries
+    default: op
+  obsidian.mobfarm.bypasslimit.*:
+    description: Bypasses per-chunk block and entity placement limits
+    default: op
+  obsidian.mobfarm.build.*:
+    description: Allows building Iron Golems, Snow Golems, and Withers when restricted
+    default: op
+  obsidian.mobfarm.*:
+    description: Grants access to all Obsidian MobFarm permissions
+    default: op
+    children:
+      obsidian.mobfarm.command: true
+      obsidian.mobfarm.command.clean: true
+      obsidian.mobfarm.command.list: true
+      obsidian.mobfarm.command.limits: true
+      obsidian.mobfarm.command.limits.full: true
+      obsidian.mobfarm.command.hoppers: true
+      obsidian.mobfarm.command.redstone: true
+      obsidian.mobfarm.command.reload: true
+      obsidian.mobfarm.cleaninform: true
+      obsidian.mobfarm.bypasslimit.*: true
+      obsidian.mobfarm.build.*: true
+      obsidian.command.mobclean: true
+      obsidian.command.mobreport: true

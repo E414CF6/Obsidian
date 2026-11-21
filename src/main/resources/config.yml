@@ -35,6 +35,7 @@ modules:
   proxy: true
   protect: true
   stats: true
+  mobfarm: true
 
 commands:
   register-standalone-aliases: true
@@ -278,12 +279,3 @@ stats:
 
 spawners:
   egg-interact-require-permission: true
-
-automation:
-  mobfarm:
-    enabled: true
-    chunk-monster-limit: 30
-    chunk-animal-limit: 30
-    chunk-total-limit: 50
-    exempt-named: true
-    exempt-tamed: true

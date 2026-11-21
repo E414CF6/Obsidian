@@ -16,7 +16,7 @@ API in a single modular JAR.
 
 ## Modules & Features
 
-All **15 modules** can be individually toggled under `modules:` in `config.yml`, and root command aliases can be toggled
+All **16 modules** can be individually toggled under `modules:` in `config.yml`, and root command aliases can be toggled
 via `commands.register-standalone-aliases`.
 
 | Module ID | Description | Primary Commands |
@@ -36,6 +36,7 @@ via `commands.register-standalone-aliases`.
 | `proxy` | BungeeCord / Velocity plugin channel messaging (`bungeecord:main`) | `/server`, `/sendall`, `/bbroadcast` |
 | `protect` | Block, container, entity, explosion, liquid, and chat/command logging with inspector mode, lookup, rollback/restore previews, undo, and purge | `/co` (aliases: `/core`, `/coreprotect`) — subcommands: `inspect`, `lookup` (`l`), `near`, `page`, `rollback` (`rb`), `restore` (`rs`), `apply`, `cancel`, `undo`, `purge`, `status`, `consumer`, `teleport` (`tp`), `reload` |
 | `stats` | Native player/server telemetry aggregator (DB + vanilla `stats/` & `advancements/` JSON) and embedded RSA-SHA256 authenticated HTTP REST API | `/serve` (aliases: `/statsapi`, `/stats`) — subcommands: `status`, `reload`, `genkey`, `refresh` |
+| `mobfarm` | Per-entity/group chunk limits, auto-cleaner, dynamic hopper throttling, redstone activity tracker, chunk block limits, and wolf control | `/mfm` (`clean`, `list`, `limits`, `hoppers`, `redstone`, `reload`), `/mobclean`, `/mobreport` |
 
 Base administrative commands: `/obsidian [info|version|reload|modules]`.
 
@@ -67,6 +68,7 @@ On first startup, Obsidian extracts default configuration files into `plugins/Ob
 - `customtext.yml` — Custom multi-line pages served via `/ctext <name>`
 - `schedules.yml` — Recurring automated command tasks
 - `eventactions.yml` — Event-driven commands (e.g., join/quit/first-join hooks)
+- `mobfarm.yml` — MobFarm entity/group limits, spawn reasons, auto-cleaner, hopper throttling, redstone tracking, and block limits
 - `messages_en.yml` / `messages_ko.yml` — Localized MiniMessage strings
 
 ## Embedded Stats HTTP API & Web Dashboard

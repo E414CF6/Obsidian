@@ -3,7 +3,7 @@ package obsidian
 import obsidian.core.command.SpecializedCommandExecutor
 import obsidian.core.database.StoredLocation
 import obsidian.core.database.WarpRecord
-import obsidian.modules.automation.DenseChunkInfo
+import obsidian.modules.mobfarm.DenseChunkInfo
 import obsidian.modules.moderation.PunishmentFlagParser
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

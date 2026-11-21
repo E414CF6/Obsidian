@@ -1,0 +1,219 @@
+# Obsidian MobFarm Module Configuration (absorbed from MobFarmManager)
+
+entity-spawn:
+  # Check entity limits when entities spawn
+  check: true
+  # Prevent players without obsidian.mobfarm.build.<entity> from building Withers, Iron Golems, or Snow Golems
+  prevent-mob-build: false
+  # Prevent Iron Golems from spawning naturally via village defense
+  prevent-iron-golem-spawn: false
+  # Group adjacent chunks together when evaluating spawn limits
+  group-chunks: true
+  # 1 = 1x1 (1 chunk), 2 = 3x3 (9 chunks), 3 = 5x5 (25 chunks)
+  group-chunks-radius: 2
+
+# When true, existing entities above the limit are removed (oldest first);
+# when false, only new spawns/placements above the limit are cancelled.
+remove-existing: true
+
+# Chunks excluded from entity checks (format: "worldName:chunkX:chunkZ")
+excluded-chunks: []
+
+auto-clean:
+  # Periodically check chunks around online players for overcrowded farms
+  use: true
+  # Notify players with obsidian.mobfarm.cleaninform when entities are cleaned
+  inform: true
+  # Check interval in seconds (clamped 15..3600)
+  interval-seconds: 30
+  # Maximum entities removed per cycle per location (0 or <= 0 uses 500)
+  max-removed: 500
+  # Group chunks when running auto-clean
+  group-chunks: false
+  # Radius (1..3) when group-chunks is enabled
+  chunk-radius: 2
+  # Radius (1..2) around online players when group-chunks is disabled
+  expand-range: 2
+
+commands:
+  clean:
+    max-removed: 500
+    group-chunks: false
+    group-chunks-radius: 1
+  exclude-disabled-from-list: false
+
+ignore:
+  full-armor-stands: true
+  entity-with-picked-item: true
+  full-item-frames: true
+  tamed-animals: true
+  named-animals: true
+  with-saddle: true
+  baby-animals: true
+  worlds:
+    - "Test"
+
+wolf-control:
+  # Automatically make excess standing tamed wolves sit when above max per owner
+  enabled: false
+  max: 3
+
+hopper-control:
+  # Dynamically throttle active hoppers by adjusting transfer cooldown (Paper native API)
+  enabled: false
+  default-cooldown: 8
+  slowest-rate: 40
+  adjust-every: 30
+
+redstone:
+  # Track redstone pulse activity per chunk over a sliding window (default 60s)
+  track: false
+  window-seconds: 60
+
+block-types:
+  # Limit specific block types per chunk (bypassable with obsidian.mobfarm.bypasslimit.<material>)
+  limit: false
+  # Check pistons pushing/pulling limited blocks across chunk boundaries
+  check-piston-move: true
+  list:
+    HOPPER: 10
+    PISTON: 10
+    STICKY_PISTON: 10
+    OBSERVER: 10
+
+log:
+  enabled: false
+  from: 5
+  folder: "logs/mobfarm"
+
+# SpawnReasons are auto-populated with all CreatureSpawnEvent.SpawnReason entries on server start.
+spawn-reasons:
+  NATURAL: true
+  JOCKEY: true
+  CHUNK_GEN: true
+  SPAWNER: true
+  TRIAL_SPAWNER: true
+  EGG: true
+  SPAWNER_EGG: true
+  LIGHTNING: true
+  BUILD_SNOWMAN: true
+  BUILD_IRONGOLEM: true
+  BUILD_WITHER: true
+  VILLAGE_DEFENSE: true
+  VILLAGE_INVASION: true
+  BREEDING: true
+  SLIME_SPLIT: true
+  REINFORCEMENTS: true
+  NETHER_PORTAL: true
+  DISPENSE_EGG: true
+  INFECTION: true
+  CURED: true
+  OCELOT_BABY: true
+  SILVERFISH_BLOCK: true
+  MOUNT: true
+  TRAP: true
+  ENDER_PEARL: true
+  SHOULDER_ENTITY: true
+  DROWNED: true
+  SHEARED: true
+  EXPLOSION: true
+  RAID: true
+  PATROL: true
+  BEEHIVE: true
+  PIGLIN_ZOMBIFIED: true
+  SPELL: true
+  FROZEN: true
+  METAMORPHOSIS: true
+  DUPLICATION: true
+  ENCHANTMENT: true
+  OMINOUS_ITEM_SPAWNER: true
+  POTION_EFFECT: true
+  CUSTOM: true
+  DEFAULT: true
+
+entity-groups:
+  Animals:
+    use: true
+    limit: 40
+    list:
+      - PIG
+      - COW
+      - HORSE
+      - RABBIT
+      - SHEEP
+      - CHICKEN
+  Monsters:
+    use: true
+    limit: 40
+    remove-existing: true
+    list:
+      - ZOMBIE
+      - SKELETON
+      - SLIME
+      - CREEPER
+      - SQUID
+
+# Additional EntityType entries are auto-populated on server load (with -1 = unlimited by default).
+entity-types:
+  ZOMBIE:
+    use: true
+    limit: 30
+    remove-existing: true
+    manual-clean: true
+    auto-clean: true
+    natural-spawn: true
+    disable-ai: false
+  SKELETON:
+    use: true
+    limit: 30
+  CREEPER:
+    use: true
+    limit: 30
+  SPIDER:
+    use: true
+    limit: 30
+  CAVE_SPIDER:
+    use: true
+    limit: 30
+  ENDERMAN:
+    use: true
+    limit: 30
+  BLAZE:
+    use: true
+    limit: 30
+  SLIME:
+    use: true
+    limit: 30
+  COW:
+    use: true
+    limit: 20
+  PIG:
+    use: true
+    limit: 20
+  SHEEP:
+    use: true
+    limit: 20
+  CHICKEN:
+    use: true
+    limit: 20
+  RABBIT:
+    use: true
+    limit: 30
+  HORSE:
+    use: true
+    limit: 20
+  VILLAGER:
+    use: true
+    limit: 20
+  IRON_GOLEM:
+    use: true
+    limit: 20
+  ARMOR_STAND:
+    use: true
+    limit: 10
+  ITEM_FRAME:
+    use: true
+    limit: 30
+  ENDER_DRAGON:
+    use: true
+    limit: 5
