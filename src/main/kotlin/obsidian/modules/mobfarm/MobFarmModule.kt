@@ -347,10 +347,19 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
                     .clickEvent(ClickEvent.suggestCommand(tpCmd))
 
                 if (info.adjacentCount > 0) {
-                    val aroundComp = context.locale.component(
+                    var aroundComp = context.locale.component(
                         "mobfarm.list-around",
                         mapOf("near" to info.adjacentCount.toString()),
                     )
+                    if (info.adjacentTypeCounts.isNotEmpty()) {
+                        val aroundHover = info.adjacentTypeCounts.entries.sortedByDescending { it.value }.take(20)
+                            .joinToString("\n") { (t, c) ->
+                                "<white>${
+                                    t.lowercase().replace('_', ' ').replaceFirstChar { ch -> ch.uppercase() }
+                                }</white><gray>: $c</gray>"
+                            }
+                        aroundComp = aroundComp.hoverEvent(HoverEvent.showText(TextFormatter.format(aroundHover)))
+                    }
                     line = line.append(aroundComp)
                 }
 
@@ -437,7 +446,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
         top.forEachIndexed { idx, summary ->
             val bx = summary.chunkX * 16 + 8
             val bz = summary.chunkZ * 16 + 8
-            val tpCmd = "/tppos $bx 64 $bz ${summary.worldName}"
+            val tpCmd = "/tppos $bx ${summary.sampleY} $bz ${summary.worldName}"
             val hover = context.locale.component("mobfarm.hoppers-hover", mapOf("world" to summary.worldName))
             val line = context.locale.component(
                 "mobfarm.hoppers-entry",

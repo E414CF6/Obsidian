@@ -5,28 +5,9 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.HoverEvent
 import obsidian.core.ObsidianContext
 import obsidian.core.text.TextFormatter
-import org.bukkit.Bukkit
-import org.bukkit.Chunk
-import org.bukkit.Location
-import org.bukkit.Material
-import org.bukkit.World
-import org.bukkit.entity.Ageable
-import org.bukkit.entity.Animals
-import org.bukkit.entity.ArmorStand
-import org.bukkit.entity.Camel
-import org.bukkit.entity.Entity
-import org.bukkit.entity.EntityType
-import org.bukkit.entity.Horse
-import org.bukkit.entity.ItemFrame
-import org.bukkit.entity.LivingEntity
-import org.bukkit.entity.Mob
-import org.bukkit.entity.Monster
-import org.bukkit.entity.Player
-import org.bukkit.entity.Steerable
-import org.bukkit.entity.Tameable
-import org.bukkit.entity.Wolf
-import org.bukkit.entity.AbstractHorse
-import java.util.UUID
+import org.bukkit.*
+import org.bukkit.entity.*
+import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -46,6 +27,7 @@ data class DenseChunkInfo(
     val animalCount: Int,
     val typeCounts: Map<String, Int> = emptyMap(),
     val adjacentCount: Int = 0,
+    val adjacentTypeCounts: Map<String, Int> = emptyMap(),
 )
 
 data class CleanFeedback(
@@ -554,16 +536,20 @@ class MobFarmCleanerService(
             sorted.mapIndexed { idx, info ->
                 if (idx < 5) {
                     var near = 0
+                    val nearTypes = HashMap<String, Int>()
                     for (dx in -1..1) {
                         for (dz in -1..1) {
                             if (dx == 0 && dz == 0) continue
                             val neighbor = chunkSnapshots["${info.worldName}:${info.chunkX + dx}:${info.chunkZ + dz}"]
                             if (neighbor != null) {
                                 near += neighbor.totalCount
+                                for ((typeName, count) in neighbor.typeCounts) {
+                                    nearTypes[typeName] = (nearTypes[typeName] ?: 0) + count
+                                }
                             }
                         }
                     }
-                    info.copy(adjacentCount = near)
+                    info.copy(adjacentCount = near, adjacentTypeCounts = nearTypes)
                 } else {
                     info
                 }
@@ -595,20 +581,20 @@ class MobFarmCleanerService(
                 val typeName = e.type.name
                 byType[typeName] = (byType[typeName] ?: 0) + 1
                 val group = settings.getGroupForEntity(typeName, world.name)
-                if (group != null && group.use && group.limit > 0) {
+                if (group != null && group.use && group.limit >= 0) {
                     byGroup[group.groupName] = (byGroup[group.groupName] ?: 0) + 1
                 }
             }
 
             val groupEntries = byGroup.entries.mapNotNull { (gName, count) ->
                 val max = settings.entityGroups[gName]?.limit ?: -1
-                if (max > 0) LimitEntry(gName, count, max) else null
+                if (max >= 0) LimitEntry(gName, count, max) else null
             }.sortedBy { it.key }
 
             val typeEntries = byType.entries.mapNotNull { (tName, count) ->
                 val rule = settings.getEntityTypeRule(tName) ?: return@mapNotNull null
                 val max = rule.limitForWorld(world.name)
-                if (rule.use && max > 0) LimitEntry(tName, count, max) else null
+                if (rule.use && max >= 0) LimitEntry(tName, count, max) else null
             }.sortedBy { it.key }
 
             future.complete(LimitsReport(width, totalChunks, groupEntries, typeEntries))

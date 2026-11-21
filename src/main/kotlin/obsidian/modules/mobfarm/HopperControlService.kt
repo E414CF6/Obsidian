@@ -21,6 +21,7 @@ data class HopperChunkSummary(
     val chunkX: Int,
     val chunkZ: Int,
     val hopperCount: Int,
+    val sampleY: Int = 64,
 )
 
 class HopperTrackerEntry(
@@ -104,7 +105,8 @@ class HopperControlService(
             for ((coord, hoppers) in chunks) {
                 val count = hoppers.size
                 if (count > 0) {
-                    list += HopperChunkSummary(worldName, coord.x, coord.z, count)
+                    val sampleY = hoppers.keys.firstOrNull()?.y ?: 64
+                    list += HopperChunkSummary(worldName, coord.x, coord.z, count, sampleY)
                 }
             }
         }

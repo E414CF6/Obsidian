@@ -1,6 +1,7 @@
 package obsidian.modules.mobfarm
 
 import obsidian.core.ObsidianContext
+import org.bukkit.Bukkit
 import org.bukkit.Chunk
 import org.bukkit.Material
 import org.bukkit.World
@@ -103,6 +104,7 @@ class BlockLimitService(
 
         for ((coord, matCounts) in incomingByChunk) {
             if (!world.isChunkLoaded(coord.x, coord.z)) continue
+            if (!Bukkit.isOwnedByCurrentRegion(world, coord.x, coord.z)) continue
             val chunk = world.getChunkAt(coord.x, coord.z)
             val centerY = sampleYByChunk[coord] ?: 64
             for ((mat, incoming) in matCounts) {

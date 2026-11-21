@@ -4,9 +4,7 @@ import obsidian.core.ObsidianContext
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.entity.ArmorStand
-import org.bukkit.entity.Entity
 import org.bukkit.entity.EntityType
-import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Mob
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -16,6 +14,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent
 import org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason
 import org.bukkit.event.entity.EntityDeathEvent
 import org.bukkit.event.entity.EntityPickupItemEvent
+import org.bukkit.event.entity.EntityPlaceEvent
 import org.bukkit.event.hanging.HangingPlaceEvent
 import org.bukkit.event.vehicle.VehicleCreateEvent
 
@@ -95,6 +94,34 @@ class MobFarmListener(
                 }
             } else {
                 event.isCancelled = true
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    fun onEntityPlace(event: EntityPlaceEvent) {
+        val settings = config.settings
+        if (!settings.checkOnEntitySpawn) return
+
+        val entity = event.entity
+        val loc = entity.location
+        val world = loc.world ?: return
+        if (settings.isIgnoredWorld(world.name)) return
+        if (settings.isExcludedChunk(world.name, loc.blockX shr 4, loc.blockZ shr 4)) return
+
+        val typeName = entity.type.name
+        if (!settings.isTrackable(typeName)) return
+
+        val player = event.player
+        val permSuffix = typeName.lowercase().replace("_", "")
+        if (player != null && hasBypassPermission(player, permSuffix)) return
+
+        val result = cleaner.evaluateSpawn(entity)
+        if (result.cancelOriginal) {
+            event.isCancelled = true
+            if (player != null && result.lowestMax > 0) {
+                val msgKey = if (entity is ArmorStand) "mobfarm.armor-stand-limit" else "mobfarm.general-limit"
+                context.locale.send(player, msgKey, "amount" to result.lowestMax)
             }
         }
     }
