@@ -95,6 +95,10 @@ class WarpModule(
                     context.locale.send(sender, "warp.no-groups")
                     return@executes 0
                 }
+                if (sender is Player) {
+                    warpService.openWarpGroupsGui(sender)
+                    return@executes Command.SINGLE_SUCCESS
+                }
                 context.locale.send(sender, "warp.groups-header")
                 for (group in groups) {
                     val count = warpService.getAccessibleWarps(sender, group).size

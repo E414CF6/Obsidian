@@ -1,6 +1,7 @@
 package obsidian.modules.mobfarm
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import net.kyori.adventure.bossbar.BossBar
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.HoverEvent
 import obsidian.core.ObsidianContext
@@ -603,6 +604,27 @@ class MobFarmCleanerService(
     }
 
     private fun runAutoCleanCycle() {
+        val online = Bukkit.getOnlinePlayers().toList()
+        if (online.isEmpty()) return
+
+        val warnSec = context.config.uiMobfarmAutocleanBossbarSeconds
+        if (warnSec > 0 && context.config.uiBossBarTimers) {
+            context.bossBar.showGlobalCountdown(
+                id = "mobfarm_autoclean",
+                durationSeconds = warnSec,
+                color = BossBar.Color.YELLOW,
+                overlay = BossBar.Overlay.NOTCHED_10,
+                titleProvider = { rem ->
+                    context.locale.component("mobfarm.autoclean-bossbar", mapOf("seconds" to rem.toString()))
+                },
+                onComplete = { executeAutoCleanNow() },
+            )
+        } else {
+            executeAutoCleanNow()
+        }
+    }
+
+    private fun executeAutoCleanNow() {
         val settings = config.settings
         val online = Bukkit.getOnlinePlayers().toList()
         if (online.isEmpty()) return
@@ -633,6 +655,11 @@ class MobFarmCleanerService(
                     for (player in Bukkit.getOnlinePlayers()) {
                         if (player.hasPermission("obsidian.mobfarm.cleaninform") || player.hasPermission("obsidian.admin")) {
                             player.sendMessage(msg)
+                            context.actionBar.pushTransientLocale(
+                                player,
+                                "mobfarm.autoclean-actionbar",
+                                "amount" to feedback.totalCleaned,
+                            )
                         }
                     }
                 }

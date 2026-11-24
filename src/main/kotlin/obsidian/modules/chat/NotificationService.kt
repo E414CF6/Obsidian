@@ -173,7 +173,7 @@ class NotificationService(private val context: ObsidianContext) {
             // Fallback to title/actionbar if unsafe advancement loading is restricted
             val comp = TextFormatter.format("<yellow>[!]</yellow> <white>$title</white>")
             for (player in players) {
-                player.sendActionBar(comp)
+                context.actionBar.pushTransient(player, comp)
             }
         }
     }

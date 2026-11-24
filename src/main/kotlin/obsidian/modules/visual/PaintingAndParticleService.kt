@@ -54,7 +54,7 @@ class PaintingAndParticleService(private val context: ObsidianContext) : Listene
         val idx = candidates.indexOfFirst { it.key() == current.key() }
         val next = candidates[(idx + 1) % candidates.size]
         if (painting.setArt(next, false) || painting.setArt(next, true)) {
-            context.locale.sendActionBar(
+            context.actionBar.pushTransientLocale(
                 player,
                 "visual.painting-cycled",
                 "art" to next.key().value(),

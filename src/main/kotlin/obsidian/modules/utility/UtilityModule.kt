@@ -9,13 +9,20 @@ import io.papermc.paper.command.brigadier.argument.ArgumentTypes
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
 import io.papermc.paper.registry.RegistryAccess
 import io.papermc.paper.registry.RegistryKey
+import io.papermc.paper.registry.data.dialog.action.DialogAction
+import io.papermc.paper.registry.data.dialog.input.DialogInput
+import io.papermc.paper.registry.data.dialog.input.TextDialogInput
 import net.kyori.adventure.key.Key
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.*
 import org.bukkit.attribute.Attribute
 import org.bukkit.command.CommandSender
@@ -173,6 +180,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         target.gameMode = mode
         val modeName = mode.name.lowercase()
         context.locale.send(sender, "utility.gamemode-set", "target" to target.name, "gamemode" to modeName)
+        context.actionBar.pushTransientLocale(target, "utility.gamemode-changed", "gamemode" to modeName)
         if (sender != target) {
             context.locale.send(target, "utility.gamemode-changed", "gamemode" to modeName)
         }
@@ -187,8 +195,13 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             val profile = context.users.getCached(target)
             profile.flyMode = newState
             profile.markDirty()
-            context.locale.send(
-                sender, "utility.fly-toggled", "target" to target.name, "state" to if (newState) "ON" else "OFF"
+            val stateStr = if (newState) "ON" else "OFF"
+            context.locale.send(sender, "utility.fly-toggled", "target" to target.name, "state" to stateStr)
+            context.actionBar.pushTransientLocale(
+                target,
+                "utility.fly-toggled",
+                "target" to target.name,
+                "state" to stateStr
             )
         }
 
@@ -197,8 +210,13 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             val newState = !profile.godMode
             profile.godMode = newState
             profile.markDirty()
-            context.locale.send(
-                sender, "utility.god-toggled", "target" to target.name, "state" to if (newState) "ON" else "OFF"
+            val stateStr = if (newState) "ON" else "OFF"
+            context.locale.send(sender, "utility.god-toggled", "target" to target.name, "state" to stateStr)
+            context.actionBar.pushTransientLocale(
+                target,
+                "utility.god-toggled",
+                "target" to target.name,
+                "state" to stateStr
             )
         }
     }
@@ -217,6 +235,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             target.saturation = 10f
             target.fireTicks = 0
             context.locale.send(sender, "utility.healed", "target" to target.name)
+            context.actionBar.pushTransientLocale(target, "utility.healed", "target" to target.name)
         }
 
         registerTargetPlayerCommand(
@@ -226,6 +245,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             target.saturation = 10f
             target.exhaustion = 0f
             context.locale.send(sender, "utility.fed", "target" to target.name)
+            context.actionBar.pushTransientLocale(target, "utility.fed", "target" to target.name)
         }
     }
 
@@ -669,9 +689,15 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             }).build()
         registrar.register(context.plugin.pluginMeta, uncondenseNode, "Uncondense blocks into items", emptyList())
 
-        // /itemname <name|clear>
+        // /itemname [name|clear]
         val itemNameNode = Commands.literal("itemname")
             .requires { it.sender.hasPermission("obsidian.command.itemname") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val hand = requireHeldItem(player) ?: return@executes 0
+                openItemNameDialog(player, hand)
+                Command.SINGLE_SUCCESS
+            }
             .then(Commands.argument("name", StringArgumentType.greedyString()).executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val hand = requireHeldItem(player) ?: return@executes 0
@@ -695,9 +721,15 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             listOf("rename"),
         )
 
-        // /itemlore <add|set|remove|clear> ...
+        // /itemlore [add|set|remove|clear] ...
         val itemLoreNode = Commands.literal("itemlore")
             .requires { it.sender.hasPermission("obsidian.command.itemlore") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val hand = requireHeldItem(player) ?: return@executes 0
+                openItemLoreDialog(player, hand)
+                Command.SINGLE_SUCCESS
+            }
             .then(Commands.literal("clear").executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val hand = requireHeldItem(player) ?: return@executes 0
@@ -1279,10 +1311,81 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         )
     }
 
+    private fun openItemNameDialog(player: Player, hand: ItemStack) {
+        val current = hand.itemMeta?.displayName()
+            ?.let { net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().serialize(it) } ?: ""
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("utility.itemname-dialog-title"),
+            inputs = listOf(
+                DialogInput.text("name", context.locale.component("utility.itemname-dialog-label"))
+                    .initial(current)
+                    .width(240)
+                    .build(),
+            ),
+            submitLabel = context.locale.component("general.dialog-save"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+            itemPreview = hand,
+        ) { p, resp ->
+            val currentHand = requireHeldItem(p) ?: return@form
+            val meta = currentHand.itemMeta ?: return@form
+            val raw = resp.getText("name")?.trim().orEmpty()
+            if (raw.isEmpty() || raw.equals("clear", true) || raw.equals("reset", true)) {
+                meta.displayName(null)
+                currentHand.itemMeta = meta
+                context.locale.send(p, "utility.itemname-cleared")
+            } else {
+                meta.displayName(TextFormatter.format(raw))
+                currentHand.itemMeta = meta
+                context.locale.send(p, "utility.itemname-set", "name" to raw)
+            }
+        }
+    }
+
+    private fun openItemLoreDialog(player: Player, hand: ItemStack) {
+        val mm = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
+        val currentLore = hand.itemMeta?.lore()?.joinToString("\n") { mm.serialize(it) } ?: ""
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("utility.itemlore-dialog-title"),
+            inputs = listOf(
+                DialogInput.text("lore", context.locale.component("utility.itemlore-dialog-label"))
+                    .initial(currentLore)
+                    .width(260)
+                    .maxLength(1000)
+                    .multiline(TextDialogInput.MultilineOptions.create(8, 100))
+                    .build(),
+            ),
+            submitLabel = context.locale.component("general.dialog-save"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+            itemPreview = hand,
+        ) { p, resp ->
+            val currentHand = requireHeldItem(p) ?: return@form
+            val meta = currentHand.itemMeta ?: return@form
+            val raw = resp.getText("lore").orEmpty()
+            if (raw.isBlank()) {
+                meta.lore(null)
+                currentHand.itemMeta = meta
+                context.locale.send(p, "utility.itemlore-cleared")
+            } else {
+                meta.lore(raw.lines().map { TextFormatter.format(it) })
+                currentHand.itemMeta = meta
+                context.locale.send(p, "utility.itemlore-updated")
+            }
+        }
+    }
+
     private fun registerSavedItems(registrar: Commands) {
-        // /saveditems <save|get|give|list|remove>
+        // /saveditems [save|get|give|list|remove]
         val node = Commands.literal("saveditems")
             .requires { it.sender.hasPermission("obsidian.command.saveditems") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openSavedItemsGui(player, 1)
+                Command.SINGLE_SUCCESS
+            }
             .then(Commands.literal("save").then(Commands.argument("id", StringArgumentType.word()).executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val hand = requireHeldItem(player) ?: return@executes 0
@@ -1382,13 +1485,90 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         )
     }
 
+    private fun openSavedItemsGui(player: Player, page: Int = 1) {
+        val ids = savedItemService.listIds().sorted()
+        if (ids.isEmpty()) {
+            context.locale.send(player, "utility.saveditem-empty")
+            return
+        }
+        val perPage = 28
+        val totalPages = ((ids.size - 1) / perPage) + 1
+        val currentPage = page.coerceIn(1, totalPages)
+        val window = MenuWindow(
+            context.locale.component("utility.saveditem-gui-title", mapOf("page" to currentPage.toString())),
+            6
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        val slice = ids.drop((currentPage - 1) * perPage).take(perPage)
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val id = slice[idx++]
+                val item = savedItemService.getItem(id) ?: continue
+                val meta = item.itemMeta
+                val lore = meta.lore()?.toMutableList() ?: mutableListOf()
+                lore += TextFormatter.format("<dark_gray>────────────</dark_gray>")
+                lore += context.locale.component("utility.saveditem-gui-id", mapOf("id" to id))
+                lore += context.locale.component("utility.saveditem-gui-get")
+                lore += context.locale.component("utility.saveditem-gui-delete")
+                meta.lore(lore)
+                item.itemMeta = meta
+                window.set(row * 9 + col, item) { click ->
+                    if (click.clickType.isShiftClick && click.clickType.isRightClick) {
+                        click.player.closeInventory()
+                        DialogBuilder.confirm(
+                            context = context,
+                            player = click.player,
+                            title = context.locale.component("utility.saveditem-delete-title"),
+                            bodyLines = listOf(
+                                context.locale.component(
+                                    "utility.saveditem-delete-body",
+                                    mapOf("id" to id)
+                                )
+                            ),
+                            confirmLabel = context.locale.component("general.dialog-confirm"),
+                            cancelLabel = context.locale.component("general.dialog-cancel"),
+                            onConfirm = { p ->
+                                savedItemService.removeItem(id)
+                                context.locale.send(p, "utility.saveditem-removed", "id" to id)
+                                openSavedItemsGui(p, currentPage)
+                            },
+                            onCancel = { p -> openSavedItemsGui(p, currentPage) },
+                        )
+                    } else {
+                        savedItemService.giveItem(click.player, id, 1)
+                        context.locale.send(click.player, "utility.saveditem-got", "id" to id)
+                        context.actionBar.pushTransientLocale(click.player, "utility.saveditem-got", "id" to id)
+                    }
+                }
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openSavedItemsGui(player, currentPage - 1) },
+            onNext = { openSavedItemsGui(player, currentPage + 1) },
+        )
+        window.open(player)
+    }
+
     private fun registerCustomRecipe(registrar: Commands) {
         val node = Commands.literal("customrecipe")
             .requires { it.sender.hasPermission("obsidian.command.customrecipe") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openCustomRecipesGui(player)
+                Command.SINGLE_SUCCESS
+            }
             .then(Commands.literal("list").executes { ctx ->
                 val list = customRecipeService.listRecipes()
                 if (list.isEmpty()) {
                     context.locale.send(ctx.source.sender, "utility.customrecipe-empty")
+                } else if (ctx.source.sender is Player) {
+                    openCustomRecipesGui(ctx.source.sender as Player)
                 } else {
                     context.locale.send(ctx.source.sender, "utility.customrecipe-header", "count" to list.size)
                     for (item in list) {
@@ -1421,6 +1601,73 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             .build()
 
         registrar.register(context.plugin.pluginMeta, node, "List or manage custom crafting recipes", emptyList())
+    }
+
+    private fun openCustomRecipesGui(player: Player) {
+        val list = customRecipeService.listRecipes()
+        if (list.isEmpty()) {
+            context.locale.send(player, "utility.customrecipe-empty")
+            return
+        }
+        val window = MenuWindow(context.locale.component("utility.customrecipe-gui-title"), 5)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        var slot = 10
+        for (summary in list) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) break
+            val item = MenuItems.item(
+                summary.result.takeUnless { it.isAir } ?: Material.CRAFTING_TABLE,
+                "<aqua>${summary.id}</aqua>",
+                listOf(
+                    context.locale.raw("utility.customrecipe-gui-type", "type" to summary.type),
+                    context.locale.raw("utility.customrecipe-gui-preview"),
+                ),
+                amount = summary.amount,
+            )
+            window.set(slot++, item) { click ->
+                openRecipePreviewGui(click.player, summary.id)
+            }
+        }
+        window.open(player)
+    }
+
+    private fun openRecipePreviewGui(player: Player, id: String) {
+        val recipe = customRecipeService.getRegisteredRecipe(id) ?: return
+        val window = MenuWindow(context.locale.component("utility.customrecipe-preview-title", mapOf("id" to id)), 5)
+        window.fillEmpty(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        val gridSlots = listOf(10, 11, 12, 19, 20, 21, 28, 29, 30)
+        gridSlots.forEach { window.clearSlot(it) }
+
+        when (recipe) {
+            is org.bukkit.inventory.ShapedRecipe -> {
+                val shape = recipe.shape
+                for (r in shape.indices) {
+                    val rowStr = shape[r]
+                    for (c in rowStr.indices) {
+                        val ch = rowStr[c]
+                        val ing = recipe.choiceMap[ch]?.itemStack
+                        if (ing != null && !ing.type.isAir) {
+                            window.set((r + 1) * 9 + (c + 1), ing)
+                        }
+                    }
+                }
+            }
+
+            is org.bukkit.inventory.ShapelessRecipe -> {
+                recipe.choiceList.forEachIndexed { idx, choice ->
+                    val targetSlot = gridSlots.getOrNull(idx) ?: return@forEachIndexed
+                    window.set(targetSlot, choice.itemStack)
+                }
+            }
+
+            is org.bukkit.inventory.FurnaceRecipe -> {
+                window.set(20, recipe.inputChoice.itemStack)
+            }
+        }
+        window.set(23, MenuItems.item(Material.CRAFTING_TABLE, "<yellow>→</yellow>"))
+        window.set(25, recipe.result)
+        window.set(40, MenuItems.backButton(context)) { openCustomRecipesGui(player) }
+        window.open(player)
     }
 
     private fun registerScavenger(registrar: Commands) {
@@ -2622,6 +2869,30 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                 val lines = serverOpsService.donateLines
                 if (lines.isEmpty()) {
                     context.locale.send(sender, "utility.donate-empty")
+                } else if (sender is Player && context.config.uiDialogsEnabled) {
+                    val urlRegex = Regex("""https?://\S+""")
+                    val firstUrl = lines.firstNotNullOfOrNull { line ->
+                        urlRegex.find(line)?.value?.trimEnd('.', ',', ')', ']')
+                    }
+                    val actions = if (firstUrl != null) {
+                        listOf(
+                            io.papermc.paper.registry.data.dialog.ActionButton.builder(
+                                context.locale.component("utility.donate-open-store")
+                            )
+                                .width(160)
+                                .action(DialogAction.staticAction(ClickEvent.openUrl(firstUrl)))
+                                .build()
+                        )
+                    } else emptyList()
+                    DialogBuilder.multiAction(
+                        context = context,
+                        player = sender,
+                        title = context.locale.component("utility.donate-dialog-title"),
+                        bodyLines = lines.map { TextFormatter.format(it) },
+                        actions = actions,
+                        exitLabel = context.locale.component("visual.dialog-close"),
+                        columns = 1,
+                    )
                 } else {
                     lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
                 }

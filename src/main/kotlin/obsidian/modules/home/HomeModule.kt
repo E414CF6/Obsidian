@@ -60,10 +60,14 @@ class HomeModule(
         when (val result = homeService.setHome(player, name, override)) {
             is HomeService.SetHomeResult.Saved -> {
                 context.locale.send(player, "home.set", "home" to result.name)
+                context.actionBar.pushTransientLocale(player, "home.set", "home" to result.name)
             }
 
             is HomeService.SetHomeResult.ConfirmOverride -> {
                 context.locale.send(player, "home.confirm-override", "home" to result.name)
+                if (obsidian.core.ui.DialogBuilder.shouldAutoPopup(context, player)) {
+                    homeService.openOverrideConfirmDialog(player, result.name)
+                }
             }
 
             is HomeService.SetHomeResult.LimitReached -> {

@@ -33,7 +33,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
     private val listener = ProtectLoggingListener(context, service, engine)
 
     private val subcommands = listOf(
-        "help", "inspect", "i", "lookup", "l", "page", "near",
+        "help", "inspect", "i", "lookup", "l", "page", "gui", "near",
         "rollback", "rb", "restore", "rs", "apply", "cancel", "undo",
         "purge", "status", "consumer", "tp", "teleport", "reload",
     )
@@ -141,6 +141,13 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                     return
                 }
                 engine.showPage(sender, page)
+            }
+
+            "gui" -> {
+                if (!checkPerm(sender, "obsidian.protect.lookup")) return
+                val player = CommandHelper.requirePlayer(context, sender) ?: return
+                val page = tail.firstOrNull()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                engine.openSessionGui(player, page)
             }
 
             "near" -> {

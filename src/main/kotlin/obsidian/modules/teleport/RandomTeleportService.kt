@@ -1,5 +1,6 @@
 package obsidian.modules.teleport
 
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
 import obsidian.core.database.StoredLocation
@@ -80,10 +81,24 @@ class RandomTeleportService(
         val borderHalf = (border.size / 2.0) - 16.0
         val effectiveMax = minOf(worldMaxR.toDouble(), borderHalf).toInt().coerceAtLeast(worldMinR + 1)
 
+        val barId = "rtp_${player.uniqueId}"
+
         fun tryAttempt(attempt: Int): CompletableFuture<Location?> {
             if (attempt >= maxTries || !player.isOnline) {
+                context.bossBar.hide(player, barId)
                 return CompletableFuture.completedFuture(null)
             }
+            val progress = ((attempt + 1).toFloat() / maxTries.toFloat()).coerceIn(0f, 1f)
+            context.bossBar.showStatic(
+                player = player,
+                id = barId,
+                title = context.locale.component(
+                    "teleport.rt-bossbar",
+                    mapOf("attempt" to (attempt + 1).toString(), "max" to maxTries.toString()),
+                ),
+                progress = progress,
+                color = BossBar.Color.GREEN,
+            )
             val rng = ThreadLocalRandom.current()
             val dx = randomSignedDistance(rng, worldMinR, effectiveMax)
             val dz = randomSignedDistance(rng, worldMinR, effectiveMax)
@@ -116,6 +131,7 @@ class RandomTeleportService(
                     if (safeLoc == null) {
                         tryAttempt(attempt + 1)
                     } else {
+                        context.bossBar.hide(player, barId)
                         teleportService.teleport(
                             player = player,
                             destination = safeLoc,

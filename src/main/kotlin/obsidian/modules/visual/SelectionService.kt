@@ -2,6 +2,7 @@ package obsidian.modules.visual
 
 import obsidian.core.ObsidianContext
 import obsidian.core.database.StoredLocation
+import obsidian.core.ui.ActionBarPriority
 import org.bukkit.*
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -108,8 +109,17 @@ class SelectionService(private val context: ObsidianContext) : Listener {
     private val wandUsers = ConcurrentHashMap.newKeySet<UUID>()
 
     fun toggleWand(player: Player): Boolean {
-        return if (wandUsers.remove(player.uniqueId)) false else {
+        return if (wandUsers.remove(player.uniqueId)) {
+            context.actionBar.clearState(player.uniqueId, WAND_STATE_KEY)
+            false
+        } else {
             wandUsers.add(player.uniqueId)
+            context.actionBar.setLocaleState(
+                player,
+                WAND_STATE_KEY,
+                ActionBarPriority.SELECTION_WAND,
+                "visual.wand-actionbar"
+            )
             true
         }
     }
@@ -120,6 +130,7 @@ class SelectionService(private val context: ObsidianContext) : Listener {
         val stored = StoredLocation.fromBukkit(location.toBlockLocation()) ?: return null
         val sel = selections.computeIfAbsent(player.uniqueId) { PairSelection() }
         sel.pos1 = stored
+        notifySelectionActionBar(player, "1", stored)
         return stored
     }
 
@@ -127,7 +138,32 @@ class SelectionService(private val context: ObsidianContext) : Listener {
         val stored = StoredLocation.fromBukkit(location.toBlockLocation()) ?: return null
         val sel = selections.computeIfAbsent(player.uniqueId) { PairSelection() }
         sel.pos2 = stored
+        notifySelectionActionBar(player, "2", stored)
         return stored
+    }
+
+    private fun notifySelectionActionBar(player: Player, posNum: String, loc: StoredLocation) {
+        val region = getRegion(player)
+        if (region != null) {
+            context.actionBar.pushTransientLocale(
+                player,
+                "visual.pos-region-actionbar",
+                "pos" to posNum,
+                "dx" to region.widthX(),
+                "dy" to region.heightY(),
+                "dz" to region.lengthZ(),
+                "volume" to region.volume(),
+            )
+        } else {
+            context.actionBar.pushTransientLocale(
+                player,
+                "visual.pos-actionbar",
+                "pos" to posNum,
+                "x" to loc.x.toInt(),
+                "y" to loc.y.toInt(),
+                "z" to loc.z.toInt(),
+            )
+        }
     }
 
     fun getRegion(player: Player): CuboidRegion? {
@@ -224,5 +260,10 @@ class SelectionService(private val context: ObsidianContext) : Listener {
     fun onQuit(event: PlayerQuitEvent) {
         selections.remove(event.player.uniqueId)
         wandUsers.remove(event.player.uniqueId)
+        context.actionBar.clearState(event.player.uniqueId, WAND_STATE_KEY)
+    }
+
+    companion object {
+        private const val WAND_STATE_KEY = "selection_wand"
     }
 }

@@ -1,12 +1,14 @@
 package obsidian.modules.moderation
 
 import kotlinx.coroutines.launch
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
 import obsidian.core.database.*
 import obsidian.core.gui.MenuWindow
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.ActionBarPriority
 import obsidian.integration.DiscordWebhookService
 import obsidian.modules.economy.EconomyService
 import obsidian.modules.playtime.RankService
@@ -902,6 +904,7 @@ class ModerationService(private val context: ObsidianContext) {
                 "expires" to expiresStr,
                 "reason" to rec.reason,
             )
+            showJailIndicators(p, rec)
         }
         context.locale.send(
             actor,
@@ -912,9 +915,42 @@ class ModerationService(private val context: ObsidianContext) {
         )
     }
 
+    fun showJailIndicators(player: Player, rec: PunishmentRecord) {
+        val exp = rec.expiresAt
+        val expiresStr = DurationParser.formatExpiry(exp, rec.createdAt)
+        val title = context.locale.component(
+            "moderation.jail-bossbar",
+            mapOf("expires" to expiresStr, "reason" to rec.reason),
+        )
+        if (exp != null && exp > System.currentTimeMillis()) {
+            context.bossBar.showTimed(
+                player,
+                "jail_${player.uniqueId}",
+                title,
+                exp - System.currentTimeMillis(),
+                BossBar.Color.RED
+            )
+        } else {
+            context.bossBar.showStatic(player, "jail_${player.uniqueId}", title, 1.0f, BossBar.Color.RED)
+        }
+        context.actionBar.setLocaleState(
+            player,
+            "jail",
+            ActionBarPriority.JAIL,
+            "moderation.jail-actionbar",
+            "expires" to expiresStr,
+        )
+    }
+
+    fun clearJailIndicators(uuid: UUID) {
+        context.actionBar.clearState(uuid, "jail")
+        Bukkit.getPlayer(uuid)?.let { context.bossBar.hide(it, "jail_$uuid") }
+    }
+
     suspend fun unjail(target: TargetIdentity): Boolean {
         val uuid = target.uuid ?: return false
         activeJails.remove(uuid)
+        clearJailIndicators(uuid)
         return context.punishmentRepository.deactivateForTarget(PunishmentType.JAIL, uuid) > 0
     }
 
@@ -967,6 +1003,7 @@ class ModerationService(private val context: ObsidianContext) {
         val opts = getVanishOptions(player.uniqueId)
         if (vanish) {
             vanishedPlayers.add(player.uniqueId)
+            context.actionBar.setLocaleState(player, "vanish", ActionBarPriority.VANISH, "moderation.vanish-actionbar")
             if (opts.nightVision) {
                 player.addPotionEffect(
                     PotionEffect(
@@ -981,6 +1018,7 @@ class ModerationService(private val context: ObsidianContext) {
             }
         } else {
             vanishedPlayers.remove(player.uniqueId)
+            context.actionBar.clearState(player.uniqueId, "vanish")
             player.removePotionEffect(PotionEffectType.NIGHT_VISION)
             for (viewer in Bukkit.getOnlinePlayers()) {
                 if (viewer != player) {
@@ -1037,8 +1075,9 @@ class ModerationService(private val context: ObsidianContext) {
                     PunishmentType.JAIL -> {
                         activeJails[uuid] = rec
                         val loc = rec.jailName?.let(::getJailLocation)?.toBukkitLocation()
-                        if (loc != null) {
-                            context.scheduler.runForEntity(player) { player.teleportAsync(loc) }
+                        context.scheduler.runForEntity(player) {
+                            if (loc != null) player.teleportAsync(loc)
+                            showJailIndicators(player, rec)
                         }
                     }
 

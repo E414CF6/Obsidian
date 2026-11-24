@@ -2,10 +2,12 @@ package obsidian.modules.utility
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import net.kyori.adventure.bossbar.BossBar
-import net.kyori.adventure.text.Component
 import obsidian.core.ObsidianContext
+import obsidian.core.gui.MenuItems
 import obsidian.core.gui.MenuWindow
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.ActionBarPriority
+import obsidian.core.ui.UiPreferences
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
@@ -23,7 +25,6 @@ import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.event.player.PlayerToggleSneakEvent
 import org.bukkit.inventory.EquipmentSlot
-import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -87,9 +88,11 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
     }
 
     fun setTempFly(target: Player, durationMillis: Long?) {
+        val barId = "tfly_${target.uniqueId}"
         when {
             durationMillis == null -> {
                 tempFlyExpiry.remove(target.uniqueId)
+                context.bossBar.hide(target, barId)
                 context.scheduler.runForEntity(target) {
                     if (target.isOnline) {
                         target.isFlying = false
@@ -100,6 +103,12 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
 
             durationMillis == 0L -> {
                 tempFlyExpiry[target.uniqueId] = UNTIL_RELOG
+                context.bossBar.showStatic(
+                    player = target,
+                    id = barId,
+                    title = context.locale.component("utility.tfly-bossbar-relog"),
+                    color = BossBar.Color.BLUE,
+                )
                 context.scheduler.runForEntity(target) {
                     if (target.isOnline) target.allowFlight = true
                 }
@@ -107,6 +116,16 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
 
             else -> {
                 tempFlyExpiry[target.uniqueId] = System.currentTimeMillis() + durationMillis
+                context.bossBar.showTimed(
+                    player = target,
+                    id = barId,
+                    title = context.locale.component(
+                        "utility.tfly-bossbar",
+                        mapOf("time" to TextFormatter.formatDuration(durationMillis)),
+                    ),
+                    durationMillis = durationMillis,
+                    color = BossBar.Color.BLUE,
+                )
                 context.scheduler.runForEntity(target) {
                     if (target.isOnline) target.allowFlight = true
                 }
@@ -122,10 +141,36 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
     }
 
     fun setTempGod(target: Player, durationMillis: Long?) {
+        val barId = "tgod_${target.uniqueId}"
         when {
-            durationMillis == null -> tempGodExpiry.remove(target.uniqueId)
-            durationMillis == 0L -> tempGodExpiry[target.uniqueId] = UNTIL_RELOG
-            else -> tempGodExpiry[target.uniqueId] = System.currentTimeMillis() + durationMillis
+            durationMillis == null -> {
+                tempGodExpiry.remove(target.uniqueId)
+                context.bossBar.hide(target, barId)
+            }
+
+            durationMillis == 0L -> {
+                tempGodExpiry[target.uniqueId] = UNTIL_RELOG
+                context.bossBar.showStatic(
+                    player = target,
+                    id = barId,
+                    title = context.locale.component("utility.tgod-bossbar-relog"),
+                    color = BossBar.Color.YELLOW,
+                )
+            }
+
+            else -> {
+                tempGodExpiry[target.uniqueId] = System.currentTimeMillis() + durationMillis
+                context.bossBar.showTimed(
+                    player = target,
+                    id = barId,
+                    title = context.locale.component(
+                        "utility.tgod-bossbar",
+                        mapOf("time" to TextFormatter.formatDuration(durationMillis)),
+                    ),
+                    durationMillis = durationMillis,
+                    color = BossBar.Color.YELLOW,
+                )
+            }
         }
     }
 
@@ -155,6 +200,7 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
 
     fun toggleFlightChargeMode(player: Player): Boolean {
         return if (flightChargeActive.remove(player.uniqueId)) {
+            context.actionBar.clearState(player.uniqueId, "flightcharge")
             context.scheduler.runForEntity(player) {
                 player.isFlying = false
                 player.allowFlight = false
@@ -200,42 +246,29 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
     }
 
     fun openOptionsGui(player: Player) {
-        val window = MenuWindow(context.locale.component("utility.options-title"), 3)
-        val filler = ItemStack(Material.GRAY_STAINED_GLASS_PANE).apply {
-            val m = itemMeta
-            m.displayName(Component.text(" "))
-            itemMeta = m
-        }
+        val window = MenuWindow(context.locale.component("utility.options-title"), 4)
+        val filler = MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " ")
         window.fillBorder(filler)
-
-        fun toggleItem(material: Material, name: String, enabled: Boolean): ItemStack {
-            return ItemStack(material).apply {
-                val m = itemMeta
-                val status = context.locale.raw(if (enabled) "general.state-on" else "general.state-off")
-                m.displayName(
-                    context.locale.component(
-                        "utility.options-item-name",
-                        mapOf("name" to name, "state" to status),
-                    )
-                )
-                m.lore(listOf(context.locale.component("utility.options-click-toggle")))
-                itemMeta = m
-            }
-        }
 
         window.set(
             10,
-            toggleItem(Material.REDSTONE, context.locale.raw("utility.options-hp-bar"), isHpBarEnabled(player))
+            MenuItems.toggle(
+                Material.REDSTONE,
+                context.locale.raw("utility.options-hp-bar"),
+                isHpBarEnabled(player),
+                context
+            )
         ) {
             setHpBarEnabled(player, !isHpBarEnabled(player))
             openOptionsGui(player)
         }
         window.set(
             12,
-            toggleItem(
+            MenuItems.toggle(
                 Material.ELYTRA,
                 context.locale.raw("utility.options-elytra-boost"),
-                isElytraBoostEnabled(player)
+                isElytraBoostEnabled(player),
+                context
             )
         ) {
             setElytraBoostEnabled(player, !isElytraBoostEnabled(player))
@@ -243,23 +276,74 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
         }
         window.set(
             14,
-            toggleItem(Material.FEATHER, context.locale.raw("utility.options-auto-recharge"), isAutoRecharge(player))
+            MenuItems.toggle(
+                Material.FEATHER,
+                context.locale.raw("utility.options-auto-recharge"),
+                isAutoRecharge(player),
+                context
+            )
         ) {
             setAutoRecharge(player, !isAutoRecharge(player))
             openOptionsGui(player)
         }
         window.set(
-            15,
-            toggleItem(
+            16,
+            MenuItems.toggle(
                 Material.OAK_SIGN,
                 context.locale.raw("utility.options-chat-bubble"),
-                isChatBubbleEnabled(player)
+                isChatBubbleEnabled(player),
+                context
             )
         ) {
             setChatBubbleEnabled(player, !isChatBubbleEnabled(player))
             openOptionsGui(player)
         }
-        window.set(16, toggleItem(Material.PAPER, "Toggle Private Messages", true)) {
+        window.set(
+            19,
+            MenuItems.toggle(
+                Material.EXPERIENCE_BOTTLE,
+                context.locale.raw("utility.options-actionbar-hud"),
+                UiPreferences.isActionBarHudEnabled(context, player),
+                context,
+            )
+        ) {
+            UiPreferences.setActionBarHudEnabled(context, player, !UiPreferences.isActionBarHudEnabled(context, player))
+            openOptionsGui(player)
+        }
+        window.set(
+            21,
+            MenuItems.toggle(
+                Material.DRAGON_HEAD,
+                context.locale.raw("utility.options-bossbar-timers"),
+                UiPreferences.isBossBarTimersEnabled(context, player),
+                context,
+            )
+        ) {
+            val next = !UiPreferences.isBossBarTimersEnabled(context, player)
+            UiPreferences.setBossBarTimersEnabled(context, player, next)
+            if (!next) context.bossBar.hideAll(player)
+            openOptionsGui(player)
+        }
+        window.set(
+            23,
+            MenuItems.toggle(
+                Material.BOOK,
+                context.locale.raw("utility.options-dialog-popups"),
+                UiPreferences.isDialogPopupsEnabled(context, player),
+                context,
+            )
+        ) {
+            UiPreferences.setDialogPopupsEnabled(context, player, !UiPreferences.isDialogPopupsEnabled(context, player))
+            openOptionsGui(player)
+        }
+        window.set(
+            25,
+            MenuItems.item(
+                Material.PAPER,
+                context.locale.raw("utility.options-msg-toggle"),
+                listOf(context.locale.raw("utility.options-click-toggle")),
+            )
+        ) {
             player.closeInventory()
             player.performCommand("msgtoggle")
         }
@@ -305,21 +389,37 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
                 flightChargeActive.remove(uuid)
                 continue
             }
-            if (!player.isFlying) continue
+            if (!player.isFlying) {
+                context.actionBar.clearState(uuid, "flightcharge")
+                continue
+            }
             val current = getFlightCharge(player)
             val next = max(0.0, current - 1.0)
             setFlightCharge(player, next)
             if (next <= 0.0) {
                 flightChargeActive.remove(uuid)
+                context.actionBar.clearState(uuid, "flightcharge")
                 context.scheduler.runForEntity(player) {
                     player.isFlying = false
                     player.allowFlight = false
                     context.locale.send(player, "utility.flightcharge-empty")
                 }
             } else if (next <= 10.0) {
-                context.scheduler.runForEntity(player) {
-                    context.locale.sendActionBar(player, "utility.flightcharge-low", "seconds" to next.toInt())
-                }
+                context.actionBar.setLocaleState(
+                    player,
+                    "flightcharge",
+                    ActionBarPriority.FLIGHT_CHARGE,
+                    "utility.flightcharge-low",
+                    "seconds" to next.toInt(),
+                )
+            } else {
+                context.actionBar.setLocaleState(
+                    player,
+                    "flightcharge",
+                    ActionBarPriority.FLIGHT_CHARGE,
+                    "utility.flightcharge-actionbar",
+                    "seconds" to next.toInt(),
+                )
             }
         }
 
@@ -416,7 +516,7 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
         if (now < readyAt) {
             event.isCancelled = true
             val remSec = ((readyAt - now) / 1000L) + 1L
-            context.locale.sendActionBar(player, "utility.totem-cooldown", "seconds" to remSec)
+            context.actionBar.pushTransientLocale(player, "utility.totem-cooldown", "seconds" to remSec)
             return
         }
         totemCooldowns[player.uniqueId] = now + TOTEM_COOLDOWN_MS
@@ -434,6 +534,7 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
             tempGodExpiry.remove(uuid)
         }
         flightChargeActive.remove(uuid)
+        context.actionBar.clearState(uuid, "flightcharge")
         activeHpBars.remove(uuid)?.let { event.player.hideBossBar(it.bar) }
     }
 }

@@ -1,8 +1,13 @@
 package obsidian.modules.teleport
 
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
@@ -99,9 +104,27 @@ class TpaService(
         if (showActionButtons) {
             val acceptBtn = context.locale.component("teleport.tpa-accept-btn", mapOf("sender" to sender.name))
             val denyBtn = context.locale.component("teleport.tpa-deny-btn", mapOf("sender" to sender.name))
-            msg = msg.append(acceptBtn).append(TextFormatter.format(" ")).append(denyBtn)
+            val dialogBtn = context.locale.component("teleport.tpa-dialog-btn", mapOf("sender" to sender.name))
+            msg = msg.append(acceptBtn)
+                .append(TextFormatter.format(" "))
+                .append(denyBtn)
+                .append(TextFormatter.format(" "))
+                .append(dialogBtn)
         }
         target.sendMessage(msg)
+
+        val abKey = if (type == TpaType.TO_TARGET) "teleport.tpa-actionbar" else "teleport.tpahere-actionbar"
+        context.actionBar.pushTransientLocale(target, abKey, "sender" to sender.name, durationMillis = 3500L)
+        context.bossBar.showTimed(
+            player = target,
+            id = tpaBarId(sender.uniqueId),
+            title = context.locale.component(
+                if (type == TpaType.TO_TARGET) "teleport.tpa-bossbar" else "teleport.tpahere-bossbar",
+                mapOf("sender" to sender.name),
+            ),
+            durationMillis = expireSeconds * 1000L,
+            color = BossBar.Color.BLUE,
+        )
     }
 
     fun accept(target: Player, senderName: String?) {
@@ -109,6 +132,7 @@ class TpaService(
             context.locale.send(target, "teleport.tpa-none")
             return
         }
+        context.bossBar.hide(target, tpaBarId(request.senderUuid))
         val sender = Bukkit.getPlayer(request.senderUuid)
         if (sender == null || !sender.isOnline) {
             context.locale.send(target, "general.player-not-found", "player" to (senderName ?: "?"))
@@ -142,6 +166,7 @@ class TpaService(
             context.locale.send(target, "teleport.tpa-none")
             return
         }
+        context.bossBar.hide(target, tpaBarId(request.senderUuid))
         if (blockAfterDenySeconds > 0) {
             blockedUntil[request.senderUuid to target.uniqueId] =
                 System.currentTimeMillis() + blockAfterDenySeconds * 1000L
@@ -152,6 +177,84 @@ class TpaService(
             context.locale.send(sender, "teleport.tpa-denied-sender", "target" to target.name)
         }
     }
+
+    fun openPromptDialog(target: Player, senderName: String? = null) {
+        val list = incoming[target.uniqueId] ?: run {
+            context.locale.send(target, "teleport.tpa-none")
+            return
+        }
+        val req = synchronized(list) {
+            pruneExpired(list)
+            if (senderName == null) list.lastOrNull()
+            else list.lastOrNull { Bukkit.getPlayer(it.senderUuid)?.name?.equals(senderName, true) == true }
+        }
+        if (req == null) {
+            context.locale.send(target, "teleport.tpa-none")
+            return
+        }
+        val sender = Bukkit.getPlayer(req.senderUuid)
+        val sName = sender?.name ?: senderName ?: "?"
+        val bodyKey = if (req.type == TpaType.TO_TARGET) "teleport.tpa-dialog-body" else "teleport.tpahere-dialog-body"
+        DialogBuilder.confirm(
+            context = context,
+            player = target,
+            title = context.locale.component("teleport.tpa-dialog-title"),
+            bodyLines = listOf(context.locale.component(bodyKey, mapOf("sender" to sName))),
+            confirmLabel = context.locale.component("teleport.tpa-dialog-accept"),
+            cancelLabel = context.locale.component("teleport.tpa-dialog-deny"),
+            onConfirm = { p -> accept(p, sName) },
+            onCancel = { p -> deny(p, sName) },
+        )
+    }
+
+    fun openPlayerSelectorGui(sender: Player, type: TpaType, page: Int = 1) {
+        val candidates = Bukkit.getOnlinePlayers()
+            .filter { it.uniqueId != sender.uniqueId && sender.canSee(it) }
+            .sortedBy { it.name.lowercase() }
+        if (candidates.isEmpty()) {
+            context.locale.send(sender, "teleport.tpa-no-players")
+            return
+        }
+        val perPage = 28
+        val totalPages = ((candidates.size - 1) / perPage) + 1
+        val currentPage = page.coerceIn(1, totalPages)
+        val titleKey = if (type == TpaType.TO_TARGET) "teleport.tpa-gui-title" else "teleport.tpahere-gui-title"
+        val window = MenuWindow(context.locale.component(titleKey, mapOf("page" to currentPage.toString())), 6)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        val slice = candidates.drop((currentPage - 1) * perPage).take(perPage)
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val target = slice[idx++]
+                val loreKey = if (type == TpaType.TO_TARGET) "teleport.tpa-gui-lore" else "teleport.tpahere-gui-lore"
+                val head = MenuItems.playerHead(
+                    uuid = target.uniqueId,
+                    nameHint = target.name,
+                    displayName = "<aqua>${target.name}</aqua>",
+                    lore = listOf(
+                        context.locale.raw("general.gui-world", "world" to target.world.name),
+                        context.locale.raw(loreKey),
+                    ),
+                )
+                window.set(row * 9 + col, head) { click ->
+                    click.player.closeInventory()
+                    sendRequest(click.player, target, type)
+                }
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openPlayerSelectorGui(sender, type, currentPage - 1) },
+            onNext = { openPlayerSelectorGui(sender, type, currentPage + 1) },
+        )
+        window.open(sender)
+    }
+
+    private fun tpaBarId(senderUuid: UUID): String = "tpa_$senderUuid"
 
     fun suggestIncomingSenders(target: Player, prefix: String): List<String> {
         val list = incoming[target.uniqueId] ?: return emptyList()

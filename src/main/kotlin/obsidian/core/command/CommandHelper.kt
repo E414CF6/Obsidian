@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import obsidian.core.ObsidianContext
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
@@ -149,7 +150,21 @@ object CommandHelper {
         }
 
         return Commands.literal("obsidian").requires { it.sender.hasPermission("obsidian.command") }
-            .executes { ctx -> sendInfo(ctx.source.sender) }.then(
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                if (sender is Player && sender.hasPermission("obsidian.admin") && context.config.uiDialogsEnabled) {
+                    openAdminDashboardDialog(context, sender)
+                    Command.SINGLE_SUCCESS
+                } else {
+                    sendInfo(sender)
+                }
+            }
+            .then(Commands.literal("menu").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
+                val player = requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openAdminDashboardDialog(context, player)
+                Command.SINGLE_SUCCESS
+            })
+            .then(
                 Commands.literal("info").executes { ctx -> sendInfo(ctx.source.sender) }).then(
                 Commands.literal("version").executes { ctx -> sendInfo(ctx.source.sender) })
             .then(Commands.literal("reload").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
@@ -192,6 +207,63 @@ object CommandHelper {
             buildRootCommand(context).build(),
             "Obsidian core management command",
             listOf("obs"),
+        )
+    }
+
+    private fun openAdminDashboardDialog(context: ObsidianContext, player: Player) {
+        val active = context.modules.activeModules().joinToString(", ") { it.id }
+        val reloadBtn =
+            DialogBuilder.actionButton(context, player, context.locale.component("general.dashboard-reload")) { p, _ ->
+                DialogBuilder.confirm(
+                    context = context,
+                    player = p,
+                    title = context.locale.component("general.dashboard-reload-confirm-title"),
+                    bodyLines = listOf(context.locale.component("general.dashboard-reload-confirm-body")),
+                    confirmLabel = context.locale.component("general.dialog-confirm"),
+                    cancelLabel = context.locale.component("general.dialog-cancel"),
+                    onConfirm = { cp ->
+                        context.reloadAll()
+                        context.locale.send(cp, "general.reloaded")
+                        context.actionBar.pushTransientLocale(cp, "general.reloaded")
+                    },
+                )
+            }
+        val schedulesBtn = DialogBuilder.actionButton(
+            context,
+            player,
+            context.locale.component("general.dashboard-schedules")
+        ) { p, _ ->
+            p.performCommand("schedule gui")
+        }
+        val mobReportBtn = DialogBuilder.actionButton(
+            context,
+            player,
+            context.locale.component("general.dashboard-mobreport")
+        ) { p, _ ->
+            p.performCommand("mobreport")
+        }
+        val optionsBtn =
+            DialogBuilder.actionButton(context, player, context.locale.component("general.dashboard-options")) { p, _ ->
+                p.performCommand("options")
+            }
+        DialogBuilder.multiAction(
+            context = context,
+            player = player,
+            title = context.locale.component("general.dashboard-title"),
+            bodyLines = listOf(
+                context.locale.component(
+                    "general.info",
+                    mapOf(
+                        "version" to context.plugin.pluginMeta.version,
+                        "dialect" to context.database.dialect.toString(),
+                        "language" to context.config.language,
+                        "modules" to active,
+                    ),
+                ),
+            ),
+            actions = listOf(reloadBtn, schedulesBtn, mobReportBtn, optionsBtn),
+            exitLabel = context.locale.component("visual.dialog-close"),
+            columns = 2,
         )
     }
 

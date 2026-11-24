@@ -1,8 +1,12 @@
 package obsidian.modules.protect
 
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import obsidian.modules.visual.SelectionService
 import org.bukkit.Bukkit
 import org.bukkit.Location
@@ -276,6 +280,30 @@ class ProtectRollbackEngine(
         service.previewSessions[player.uniqueId] =
             ProtectPreviewSession(query.copy(preview = false), restoreMode, previewMap)
         context.locale.send(player, "protect.preview-started", "count" to changed)
+        context.bossBar.showStatic(
+            player = player,
+            id = "co_preview_${player.uniqueId}",
+            title = context.locale.component("protect.preview-bossbar", mapOf("count" to changed.toString())),
+            progress = 1.0f,
+            color = BossBar.Color.YELLOW,
+        )
+        if (DialogBuilder.shouldAutoPopup(context, player)) {
+            DialogBuilder.confirm(
+                context = context,
+                player = player,
+                title = context.locale.component("protect.preview-dialog-title"),
+                bodyLines = listOf(
+                    context.locale.component(
+                        "protect.preview-dialog-body",
+                        mapOf("count" to changed.toString())
+                    )
+                ),
+                confirmLabel = context.locale.component("protect.preview-dialog-apply"),
+                cancelLabel = context.locale.component("protect.preview-dialog-cancel"),
+                onConfirm = { p -> applyPreviewSession(p) },
+                onCancel = { p -> cancelPreview(p) },
+            )
+        }
     }
 
     fun applyPreviewSession(player: Player) {
@@ -301,9 +329,65 @@ class ProtectRollbackEngine(
     }
 
     private fun cancelVisualPreviewOnly(player: Player, session: ProtectPreviewSession) {
+        context.bossBar.hide(player, "co_preview_${player.uniqueId}")
         for (loc in session.previewBlocks.keys) {
             player.sendBlockChange(loc, loc.block.blockData)
         }
+    }
+
+    fun openSessionGui(player: Player, requestedPage: Int = 1) {
+        val session = service.pageSessions[senderKey(player)]
+        if (session == null || session.lines.isEmpty()) {
+            context.locale.send(player, "protect.no-page-session")
+            return
+        }
+        val perPage = 28
+        val totalPages = ((session.lines.size - 1) / perPage) + 1
+        val page = requestedPage.coerceIn(1, totalPages)
+        val window = MenuWindow(
+            context.locale.component(
+                "protect.gui-title",
+                mapOf("label" to session.headerLabel, "page" to page.toString(), "pages" to totalPages.toString()),
+            ),
+            6,
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        val slice = session.lines.drop((page - 1) * perPage).take(perPage)
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val line = slice[idx++]
+                val mat = Material.matchMaterial(line.subject.substringAfterLast(' ').uppercase())
+                    ?.takeIf { it.isItem && !it.isAir } ?: Material.PAPER
+                val age = ProtectCommandParser.formatRelativeTime(line.time)
+                val item = MenuItems.item(
+                    mat,
+                    "<aqua>${line.actor}</aqua> <white>${line.verb}</white> <yellow>${line.subject}</yellow>",
+                    buildList {
+                        add("<gray>$age</gray>")
+                        if (line.detail.isNotBlank()) add("<gray>${line.detail}</gray>")
+                        add(context.locale.raw("general.gui-world", "world" to line.world))
+                        add(context.locale.raw("general.gui-coords", "x" to line.x, "y" to line.y, "z" to line.z))
+                        add("")
+                        add(context.locale.raw("protect.gui-tp-lore"))
+                    },
+                )
+                window.set(row * 9 + col, item) { click ->
+                    val world = Bukkit.getWorld(line.world) ?: return@set
+                    click.player.closeInventory()
+                    click.player.teleportAsync(Location(world, line.x + 0.5, line.y + 1.0, line.z + 0.5))
+                }
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = page,
+            totalPages = totalPages,
+            onPrev = { openSessionGui(player, page - 1) },
+            onNext = { openSessionGui(player, page + 1) },
+        )
+        window.open(player)
     }
 
     fun performUndo(sender: CommandSender) {

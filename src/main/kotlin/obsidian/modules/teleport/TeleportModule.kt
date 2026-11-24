@@ -7,9 +7,12 @@ import com.mojang.brigadier.arguments.StringArgumentType
 import io.papermc.paper.command.brigadier.Commands
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
+import io.papermc.paper.registry.data.dialog.input.DialogInput
+import io.papermc.paper.registry.data.dialog.input.SingleOptionDialogInput
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.module.ObsidianModule
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
 import org.bukkit.FluidCollisionMode
 import org.bukkit.Location
@@ -130,6 +133,11 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerTpPos(registrar: Commands) {
         val node = Commands.literal("tppos")
             .requires { it.sender.hasPermission("obsidian.command.tppos") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openTpPosDialog(player)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.argument("x", DoubleArgumentType.doubleArg()).then(
                     Commands.argument("y", DoubleArgumentType.doubleArg())
@@ -178,9 +186,77 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
         return Command.SINGLE_SUCCESS
     }
 
+    private fun openTpPosDialog(player: Player) {
+        val worlds = Bukkit.getWorlds().map { w ->
+            SingleOptionDialogInput.OptionEntry.create(
+                w.name,
+                obsidian.core.text.TextFormatter.format("<white>${w.name}</white>"),
+                w == player.world,
+            )
+        }
+        val inputs = listOf(
+            DialogInput.text("x", context.locale.component("teleport.tppos-label-x"))
+                .initial(player.location.blockX.toString()).width(180).build(),
+            DialogInput.text("y", context.locale.component("teleport.tppos-label-y"))
+                .initial(player.location.blockY.toString()).width(180).build(),
+            DialogInput.text("z", context.locale.component("teleport.tppos-label-z"))
+                .initial(player.location.blockZ.toString()).width(180).build(),
+            DialogInput.singleOption("world", context.locale.component("teleport.tppos-label-world"), worlds)
+                .width(180).build(),
+        )
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("teleport.tppos-dialog-title"),
+            inputs = inputs,
+            submitLabel = context.locale.component("general.dialog-confirm"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+        ) { p, response ->
+            val x = response.getText("x")?.trim()?.toDoubleOrNull()
+            val y = response.getText("y")?.trim()?.toDoubleOrNull()
+            val z = response.getText("z")?.trim()?.toDoubleOrNull()
+            val worldName = response.getText("world")?.trim()
+            val world = worldName?.let { Bukkit.getWorld(it) } ?: p.world
+            if (x == null || y == null || z == null) {
+                context.locale.send(
+                    p,
+                    "general.invalid-number",
+                    "input" to "${response.getText("x")}, ${response.getText("y")}, ${response.getText("z")}"
+                )
+                return@form
+            }
+            val dest = Location(world, x, y, z, p.location.yaw, p.location.pitch)
+            teleportService.teleport(p, dest, TeleportCause.COMMAND).thenAccept { ok ->
+                if (ok) {
+                    context.locale.send(
+                        p,
+                        "teleport.teleported-to-coords",
+                        "target" to p.name,
+                        "world" to world.name,
+                        "x" to x.roundToInt(),
+                        "y" to y.roundToInt(),
+                        "z" to z.roundToInt(),
+                    )
+                    context.actionBar.pushTransientLocale(
+                        p,
+                        "teleport.actionbar-teleported",
+                        "target" to "${world.name} (${x.roundToInt()}, ${y.roundToInt()}, ${z.roundToInt()})",
+                    )
+                } else {
+                    context.locale.send(p, "teleport.unsafe-location")
+                }
+            }
+        }
+    }
+
     private fun registerTpaCommands(registrar: Commands) {
         val tpaNode = Commands.literal("tpa")
             .requires { it.sender.hasPermission("obsidian.command.tpa") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                tpaService.openPlayerSelectorGui(sender, TpaType.TO_TARGET)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                     val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
@@ -194,6 +270,11 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
 
         val tpaHereNode = Commands.literal("tpahere")
             .requires { it.sender.hasPermission("obsidian.command.tpahere") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                tpaService.openPlayerSelectorGui(sender, TpaType.HERE)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
                     val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
@@ -214,6 +295,11 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
             registrar, "tpdeny", "Deny a teleport request", "obsidian.command.tpdeny"
         ) { player, senderName ->
             tpaService.deny(player, senderName)
+        }
+        registerTpaResponseCommand(
+            registrar, "tpaprompt", "Open TPA confirmation dialog", "obsidian.command.tpaccept"
+        ) { player, senderName ->
+            tpaService.openPromptDialog(player, senderName)
         }
     }
 
@@ -255,8 +341,10 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 }
                 context.warmups.runWithWarmup(player, "back") {
                     teleportService.teleport(player, dest, TeleportCause.COMMAND).thenAccept { ok ->
-                        if (ok) context.locale.send(player, "teleport.back-teleported")
-                        else context.locale.send(player, "teleport.unsafe-location")
+                        if (ok) {
+                            context.locale.send(player, "teleport.back-teleported")
+                            context.actionBar.pushTransientLocale(player, "teleport.actionbar-back")
+                        } else context.locale.send(player, "teleport.unsafe-location")
                     }
                 }
                 Command.SINGLE_SUCCESS
@@ -273,8 +361,10 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 }
                 context.warmups.runWithWarmup(player, "dback") {
                     teleportService.teleport(player, dest, TeleportCause.COMMAND).thenAccept { ok ->
-                        if (ok) context.locale.send(player, "teleport.dback-teleported")
-                        else context.locale.send(player, "teleport.unsafe-location")
+                        if (ok) {
+                            context.locale.send(player, "teleport.dback-teleported")
+                            context.actionBar.pushTransientLocale(player, "teleport.actionbar-dback")
+                        } else context.locale.send(player, "teleport.unsafe-location")
                     }
                 }
                 Command.SINGLE_SUCCESS
@@ -337,7 +427,10 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 context.warmups.runWithWarmup(player, "spawn") {
                     teleportService.teleport(player, spawn, TeleportCause.COMMAND, ensureSafe = false)
                         .thenAccept { ok ->
-                            if (ok) context.locale.send(player, "teleport.spawn-teleported")
+                            if (ok) {
+                                context.locale.send(player, "teleport.spawn-teleported")
+                                context.actionBar.pushTransientLocale(player, "teleport.actionbar-spawn")
+                            }
                         }
                 }
                 Command.SINGLE_SUCCESS
@@ -424,6 +517,11 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                     "x" to loc.blockX,
                     "y" to loc.blockY,
                     "z" to loc.blockZ,
+                )
+                context.actionBar.pushTransientLocale(
+                    player,
+                    "teleport.actionbar-teleported",
+                    "target" to "${world.name} (${loc.blockX}, ${loc.blockY}, ${loc.blockZ})",
                 )
             }
         }

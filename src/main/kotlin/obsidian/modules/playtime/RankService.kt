@@ -2,6 +2,7 @@ package obsidian.modules.playtime
 
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
 import obsidian.core.database.PlayTimeRecord
@@ -97,6 +98,28 @@ class RankService(private val context: ObsidianContext) : Listener {
 
     fun getAllRanks(): List<RankDefinition> = ranks.values.toList()
 
+    fun getAllRewards(): List<PlayTimeReward> = rewards.values.toList()
+
+    fun claimSingleReward(player: Player, rewardId: String): PlayTimeReward? {
+        val state = sessions[player.uniqueId] ?: return null
+        accumulateSession(state)
+        val reward = rewards[rewardId.lowercase()] ?: return null
+        val key = reward.id.lowercase()
+        val claimed = state.record.claimedRewards.toMutableSet()
+        if (key in claimed) return null
+        if (state.record.totalMillis < reward.requiredPlaytimeSeconds * 1000L) return null
+        claimed += key
+        for (cmd in reward.commands) {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("{player}", player.name))
+        }
+        val updated = state.record.copy(claimedRewards = claimed, updatedAt = System.currentTimeMillis())
+        state.record = updated
+        context.scheduler.asyncScope.launch {
+            context.playTimeRepository.upsertAll(listOf(updated))
+        }
+        return reward
+    }
+
     fun getOrLoadSnapshot(uuid: UUID, nameHint: String? = null): PlayTimeRecord {
         sessions[uuid]?.let { state ->
             accumulateSession(state)
@@ -180,6 +203,16 @@ class RankService(private val context: ObsidianContext) : Listener {
                 "playtime.rank-up-success",
                 "old" to current.displayName,
                 "new" to nextRank.displayName,
+            )
+            context.bossBar.showTimed(
+                player = player,
+                id = "rankup_${player.uniqueId}",
+                title = context.locale.component(
+                    "playtime.rank-up-bossbar",
+                    mapOf("old" to current.displayName, "new" to nextRank.displayName),
+                ),
+                durationMillis = 5000L,
+                color = BossBar.Color.PURPLE,
             )
         }
         return RankUpResult.Promoted(current, nextRank)

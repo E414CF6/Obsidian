@@ -10,11 +10,14 @@ import obsidian.core.command.CommandHelper
 import obsidian.core.command.SpecializedCommandExecutor
 import obsidian.core.database.DatabaseBackupAndMigrationService
 import obsidian.core.database.DatabaseDialect
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.TextFormatter
 import obsidian.integration.DiscordWebhookService
 import obsidian.integration.LuckPermsHook
 import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.entity.Animals
 import org.bukkit.entity.Item
 import org.bukkit.entity.Monster
@@ -87,6 +90,18 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerScheduleCommands(registrar: Commands) {
         val node = Commands.literal("schedule")
             .requires { it.sender.hasPermission("obsidian.command.schedule") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openScheduleGui(player)
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.literal("gui").executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    openScheduleGui(player)
+                    Command.SINGLE_SUCCESS
+                }
+            )
             .then(
                 Commands.literal("list").executes { ctx ->
                     val sender = ctx.source.sender
@@ -150,6 +165,58 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
                     Command.SINGLE_SUCCESS
                 }).build()
         registrar.register(context.plugin.pluginMeta, node, "Manage automated schedules", emptyList())
+    }
+
+    private fun openScheduleGui(player: Player) {
+        val all = scheduleService.getAllJobs()
+        if (all.isEmpty()) {
+            context.locale.send(player, "automation.schedule-empty")
+            return
+        }
+        val window = MenuWindow(
+            context.locale.component("automation.schedule-gui-title", mapOf("count" to all.size.toString())),
+            5
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        var slot = 10
+        for (job in all) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) break
+            val state = context.locale.raw(if (job.enabled) "general.state-on" else "general.state-off")
+            val timing = job.dailyAt?.let {
+                context.locale.raw("automation.schedule-timing-daily", "time" to it)
+            } ?: context.locale.raw("automation.schedule-timing-interval", "seconds" to job.intervalSeconds)
+            val item = MenuItems.item(
+                if (job.enabled) Material.CLOCK else Material.GRAY_DYE,
+                "<aqua>${job.id}</aqua> <gray>[$state<gray>]",
+                listOf(
+                    timing,
+                    context.locale.raw("automation.schedule-gui-cmds", "count" to job.commands.size),
+                    "",
+                    context.locale.raw("automation.schedule-gui-toggle"),
+                    context.locale.raw("automation.schedule-gui-run"),
+                ),
+            )
+            window.set(slot++, item) { click ->
+                if (click.clickType.isRightClick) {
+                    scheduleService.runNow(job)
+                    context.locale.send(click.player, "automation.schedule-ran", "id" to job.id)
+                    context.actionBar.pushTransientLocale(click.player, "automation.schedule-ran", "id" to job.id)
+                } else {
+                    val next = scheduleService.toggleJob(job.id)
+                    if (next != null) {
+                        context.locale.send(
+                            click.player,
+                            "automation.schedule-toggled",
+                            "id" to job.id,
+                            "state" to if (next) "ON" else "OFF",
+                        )
+                        openScheduleGui(click.player)
+                    }
+                }
+            }
+        }
+        window.open(player)
     }
 
     private fun registerAfkCommand(registrar: Commands) {

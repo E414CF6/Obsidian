@@ -1,5 +1,6 @@
 package obsidian.modules.kit
 
+import io.papermc.paper.registry.data.dialog.input.DialogInput
 import kotlinx.coroutines.launch
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
@@ -7,6 +8,7 @@ import obsidian.core.database.KitClaimRecord
 import obsidian.core.gui.MenuItems
 import obsidian.core.gui.MenuWindow
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import obsidian.modules.economy.EconomyService
 import org.bukkit.Bukkit
 import org.bukkit.Material
@@ -243,30 +245,242 @@ class KitService(private val context: ObsidianContext) : Listener {
                 lore += context.locale.raw("kit.gui-cost", "cost" to eco.formatMoney(kit.cost))
             }
             lore += context.locale.raw("kit.gui-click")
+            lore += context.locale.raw("kit.gui-right-preview")
 
-            window.set(slot, MenuItems.item(kit.iconMaterial, kit.displayName, lore)) {
-                player.closeInventory()
-                when (val res = claimKit(player, kit)) {
-                    ClaimResult.Claimed -> context.locale.send(player, "kit.given", "kit" to kit.name)
-                    ClaimResult.NoPermission -> context.locale.send(player, "kit.no-access", "kit" to kit.name)
-                    ClaimResult.MaxUsesReached -> context.locale.send(player, "kit.max-uses-reached", "kit" to kit.name)
-                    is ClaimResult.OnCooldown -> context.locale.send(
-                        player,
-                        "kit.cooldown",
-                        "kit" to kit.name,
-                        "time" to TextFormatter.formatDuration(res.remainingMillis),
-                    )
-
-                    is ClaimResult.InsufficientFunds -> context.locale.send(
-                        player,
-                        "kit.insufficient-funds",
-                        "kit" to kit.name,
-                        "cost" to (eco?.formatMoney(res.cost) ?: res.cost.toString()),
-                    )
+            window.set(slot, MenuItems.item(kit.iconMaterial, kit.displayName, lore)) { click ->
+                if (click.clickType.isRightClick) {
+                    openKitPreviewGui(click.player, kit, currentPage)
+                } else {
+                    player.closeInventory()
+                    claimAndNotify(player, kit)
                 }
             }
         }
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openKitsGui(player, currentPage - 1) },
+            onNext = { openKitsGui(player, currentPage + 1) },
+        )
         window.open(player)
+    }
+
+    fun claimAndNotify(player: Player, kit: KitDefinition) {
+        val eco = context.getService<EconomyService>()
+        when (val res = claimKit(player, kit)) {
+            ClaimResult.Claimed -> {
+                context.locale.send(player, "kit.given", "kit" to kit.name)
+                context.actionBar.pushTransientLocale(player, "kit.actionbar-given", "kit" to kit.name)
+            }
+
+            ClaimResult.NoPermission -> context.locale.send(player, "kit.no-access", "kit" to kit.name)
+            ClaimResult.MaxUsesReached -> context.locale.send(player, "kit.max-uses-reached", "kit" to kit.name)
+            is ClaimResult.OnCooldown -> context.locale.send(
+                player,
+                "kit.cooldown",
+                "kit" to kit.name,
+                "time" to TextFormatter.formatDuration(res.remainingMillis),
+            )
+
+            is ClaimResult.InsufficientFunds -> context.locale.send(
+                player,
+                "kit.insufficient-funds",
+                "kit" to kit.name,
+                "cost" to (eco?.formatMoney(res.cost) ?: res.cost.toString()),
+            )
+        }
+    }
+
+    fun openKitPreviewGui(player: Player, kit: KitDefinition, returnPage: Int = 1) {
+        val title = context.locale.component("kit.preview-title", mapOf("kit" to kit.name))
+        val window = MenuWindow(title, rows = 6)
+        val items = kit.resolveItems()
+        for (i in 0 until minOf(items.size, 45)) {
+            window.set(i, items[i])
+        }
+        val border = MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " ")
+        window.fillRow(5, border)
+
+        window.set(45, MenuItems.backButton(context)) { click ->
+            openKitsGui(click.player, returnPage)
+        }
+        val eco = context.getService<EconomyService>()
+        val claimLore = buildList {
+            if (kit.cooldownSeconds > 0L) {
+                add(
+                    context.locale.raw(
+                        "kit.preview-cooldown",
+                        "time" to TextFormatter.formatDuration(kit.cooldownSeconds * 1000L)
+                    )
+                )
+            }
+            if (kit.cost > 0.0 && eco != null) {
+                add(context.locale.raw("kit.gui-cost", "cost" to eco.formatMoney(kit.cost)))
+            }
+            add(context.locale.raw("kit.gui-click"))
+        }
+        window.set(
+            49,
+            MenuItems.item(Material.LIME_CONCRETE, context.locale.raw("kit.preview-claim-btn"), claimLore)
+        ) { click ->
+            click.player.closeInventory()
+            claimAndNotify(click.player, kit)
+        }
+        window.open(player)
+    }
+
+    fun openKitEditorGui(player: Player, page: Int = 1) {
+        val all = getAllKits()
+        val perPage = 28
+        val totalPages = ceil(all.size.toDouble() / perPage).toInt().coerceAtLeast(1)
+        val currentPage = page.coerceIn(1, totalPages)
+        val slice = all.drop((currentPage - 1) * perPage).take(perPage)
+
+        val window =
+            MenuWindow(context.locale.component("kit.editor-gui-title", mapOf("page" to currentPage.toString())), 6)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val kit = slice[idx++]
+                val lore = listOf(
+                    context.locale.raw("kit.editor-lore-cooldown", "sec" to kit.cooldownSeconds),
+                    context.locale.raw("kit.editor-lore-cost", "cost" to kit.cost),
+                    context.locale.raw("kit.editor-lore-maxuses", "uses" to kit.maxUses),
+                    "",
+                    context.locale.raw("kit.editor-lore-click"),
+                    context.locale.raw("kit.editor-lore-shift-left"),
+                    context.locale.raw("kit.editor-lore-shift-right"),
+                )
+                window.set(row * 9 + col, MenuItems.item(kit.iconMaterial, kit.displayName, lore)) { click ->
+                    when {
+                        click.clickType.isShiftClick && click.clickType.isRightClick -> {
+                            click.player.closeInventory()
+                            DialogBuilder.confirm(
+                                context = context,
+                                player = click.player,
+                                title = context.locale.component("kit.delete-dialog-title"),
+                                bodyLines = listOf(
+                                    context.locale.component(
+                                        "kit.delete-dialog-body",
+                                        mapOf("kit" to kit.name)
+                                    )
+                                ),
+                                confirmLabel = context.locale.component("general.dialog-confirm"),
+                                cancelLabel = context.locale.component("general.dialog-cancel"),
+                                onConfirm = { p ->
+                                    deleteKit(kit.name)
+                                    context.locale.send(p, "kit.deleted", "kit" to kit.name)
+                                    openKitEditorGui(p, currentPage)
+                                },
+                                onCancel = { p -> openKitEditorGui(p, currentPage) },
+                            )
+                        }
+
+                        click.clickType.isShiftClick && click.clickType.isLeftClick -> {
+                            click.player.closeInventory()
+                            DialogBuilder.confirm(
+                                context = context,
+                                player = click.player,
+                                title = context.locale.component("kit.overwrite-dialog-title"),
+                                bodyLines = listOf(
+                                    context.locale.component(
+                                        "kit.overwrite-dialog-body",
+                                        mapOf("kit" to kit.name)
+                                    )
+                                ),
+                                confirmLabel = context.locale.component("general.dialog-confirm"),
+                                cancelLabel = context.locale.component("general.dialog-cancel"),
+                                onConfirm = { p ->
+                                    createFromPlayerInventory(kit.name, p)
+                                    context.locale.send(p, "kit.updated", "kit" to kit.name, "field" to "items")
+                                    openKitEditorGui(p, currentPage)
+                                },
+                                onCancel = { p -> openKitEditorGui(p, currentPage) },
+                            )
+                        }
+
+                        else -> {
+                            click.player.closeInventory()
+                            openKitEditDialog(click.player, kit, currentPage)
+                        }
+                    }
+                }
+            }
+        }
+
+        window.set(
+            49,
+            MenuItems.item(
+                Material.EMERALD,
+                context.locale.raw("kit.editor-create-btn"),
+                listOf(context.locale.raw("kit.editor-create-lore")),
+            ),
+        ) { click ->
+            click.player.closeInventory()
+            DialogBuilder.form(
+                context = context,
+                player = click.player,
+                title = context.locale.component("kit.create-dialog-title"),
+                inputs = listOf(
+                    DialogInput.text("name", context.locale.component("kit.create-dialog-label")).width(200).build(),
+                ),
+                submitLabel = context.locale.component("general.dialog-confirm"),
+                cancelLabel = context.locale.component("general.dialog-cancel"),
+            ) { p, resp ->
+                val name = resp.getText("name")?.trim()?.replace(" ", "_")?.takeIf { it.isNotEmpty() } ?: return@form
+                createFromPlayerInventory(name, p)
+                context.locale.send(p, "kit.created", "kit" to name)
+                openKitEditorGui(p, currentPage)
+            }
+        }
+
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openKitEditorGui(player, currentPage - 1) },
+            onNext = { openKitEditorGui(player, currentPage + 1) },
+        )
+        window.open(player)
+    }
+
+    fun openKitEditDialog(player: Player, kit: KitDefinition, returnPage: Int = 1) {
+        val inputs = listOf(
+            DialogInput.text("display", context.locale.component("kit.edit-display-label"))
+                .initial(kit.displayName).width(220).build(),
+            DialogInput.text("cooldown", context.locale.component("kit.edit-cooldown-label"))
+                .initial(kit.cooldownSeconds.toString()).width(180).build(),
+            DialogInput.text("cost", context.locale.component("kit.edit-cost-label"))
+                .initial(kit.cost.toString()).width(180).build(),
+            DialogInput.text("maxuses", context.locale.component("kit.edit-maxuses-label"))
+                .initial(kit.maxUses.toString()).width(180).build(),
+            DialogInput.bool("perm", context.locale.component("kit.edit-perm-label"))
+                .initial(kit.permissionRequired).build(),
+            DialogInput.bool("hidden", context.locale.component("kit.edit-hidden-label"))
+                .initial(kit.hidden).build(),
+        )
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("kit.edit-dialog-title", mapOf("kit" to kit.name)),
+            inputs = inputs,
+            submitLabel = context.locale.component("general.dialog-save"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+        ) { p, resp ->
+            resp.getText("display")?.takeIf { it.isNotBlank() }?.let { kit.displayName = it }
+            resp.getText("cooldown")?.trim()?.toLongOrNull()?.coerceAtLeast(0L)?.let { kit.cooldownSeconds = it }
+            resp.getText("cost")?.trim()?.toDoubleOrNull()?.coerceAtLeast(0.0)?.let { kit.cost = it }
+            resp.getText("maxuses")?.trim()?.toIntOrNull()?.coerceAtLeast(0)?.let { kit.maxUses = it }
+            resp.getBoolean("perm")?.let { kit.permissionRequired = it }
+            resp.getBoolean("hidden")?.let { kit.hidden = it }
+            saveKit(kit)
+            context.locale.send(p, "kit.updated", "kit" to kit.name, "field" to "properties")
+            openKitEditorGui(p, returnPage)
+        }
     }
 
     @EventHandler(priority = EventPriority.LOW)

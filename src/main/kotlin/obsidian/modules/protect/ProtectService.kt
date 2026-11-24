@@ -3,6 +3,7 @@ package obsidian.modules.protect
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import obsidian.core.ObsidianContext
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.ActionBarPriority
 import org.bukkit.*
 import org.bukkit.block.Block
 import org.bukkit.block.BlockState
@@ -111,16 +112,24 @@ class ProtectService(
     fun isInspecting(player: Player): Boolean = inspectingPlayers.contains(player.uniqueId)
 
     fun setInspecting(player: Player, enabled: Boolean) {
-        if (enabled) inspectingPlayers.add(player.uniqueId) else inspectingPlayers.remove(player.uniqueId)
+        if (enabled) {
+            inspectingPlayers.add(player.uniqueId)
+            context.actionBar.setLocaleState(
+                player,
+                "protect_inspect",
+                ActionBarPriority.PROTECT_INSPECTOR,
+                "protect.inspector-actionbar",
+            )
+        } else {
+            inspectingPlayers.remove(player.uniqueId)
+            context.actionBar.clearState(player.uniqueId, "protect_inspect")
+        }
     }
 
     fun toggleInspect(player: Player): Boolean {
-        return if (inspectingPlayers.remove(player.uniqueId)) {
-            false
-        } else {
-            inspectingPlayers.add(player.uniqueId)
-            true
-        }
+        val next = !isInspecting(player)
+        setInspecting(player, next)
+        return next
     }
 
     // --- Public programmatic logging API (CoreProtectAPI parity) ---

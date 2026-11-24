@@ -48,7 +48,12 @@ class ObsidianPlugin : JavaPlugin() {
         pm.registerEvents(ctx.users, this)
         pm.registerEvents(ctx.warmups, this)
         pm.registerEvents(ctx.commandAliases, this)
+        pm.registerEvents(ctx.actionBar, this)
+        pm.registerEvents(ctx.bossBar, this)
         pm.registerEvents(MenuListener(), this)
+
+        ctx.actionBar.start()
+        ctx.bossBar.start()
 
         // Register Phase 1-4 modules in dependency order
         val teleportModule = TeleportModule(ctx)

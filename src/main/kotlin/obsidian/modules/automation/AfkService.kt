@@ -2,8 +2,10 @@ package obsidian.modules.automation
 
 import io.papermc.paper.event.player.AsyncChatEvent
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.ActionBarPriority
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -69,7 +71,13 @@ class AfkService(private val context: ObsidianContext) : Listener {
         val changed = state.isAfk != afk
         state.isAfk = afk
         state.reason = if (afk) reason?.takeIf { it.isNotBlank() } else null
-        if (!afk) state.lastActivityAt = now
+        if (!afk) {
+            state.lastActivityAt = now
+            context.actionBar.clearState(player.uniqueId, "afk")
+            context.bossBar.hide(player, "afk_kick_${player.uniqueId}")
+        } else {
+            context.actionBar.setLocaleState(player, "afk", ActionBarPriority.AFK, "automation.afk-actionbar")
+        }
 
         if (changed && !silent) {
             val key = if (afk) "automation.afk-enter" else "automation.afk-leave"
@@ -100,10 +108,26 @@ class AfkService(private val context: ObsidianContext) : Listener {
             if (idleSeconds > 0L && !state.isAfk && elapsedSec >= idleSeconds && !player.hasPermission("obsidian.afk.bypass")) {
                 setAfk(player, afk = true)
             }
-            if (kickSeconds > 0L && elapsedSec >= kickSeconds && !player.hasPermission("obsidian.afk.kickbypass")) {
-                context.scheduler.runForEntity(player) {
-                    if (player.isOnline) {
-                        player.kick(TextFormatter.format(context.locale.raw("automation.afk-kicked")))
+            if (kickSeconds > 0L && !player.hasPermission("obsidian.afk.kickbypass")) {
+                val warnThreshold = context.config.uiAfkKickWarningSeconds.toLong()
+                val remSec = (kickSeconds - elapsedSec).coerceAtLeast(0L)
+                if (warnThreshold > 0L && remSec in 1L..warnThreshold) {
+                    context.bossBar.showStatic(
+                        player = player,
+                        id = "afk_kick_${player.uniqueId}",
+                        title = context.locale.component(
+                            "automation.afk-kick-bossbar",
+                            mapOf("seconds" to remSec.toString())
+                        ),
+                        progress = (remSec.toFloat() / warnThreshold.toFloat()).coerceIn(0f, 1f),
+                        color = BossBar.Color.RED,
+                    )
+                }
+                if (elapsedSec >= kickSeconds) {
+                    context.scheduler.runForEntity(player) {
+                        if (player.isOnline) {
+                            player.kick(TextFormatter.format(context.locale.raw("automation.afk-kicked")))
+                        }
                     }
                 }
             }
@@ -118,6 +142,7 @@ class AfkService(private val context: ObsidianContext) : Listener {
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
         states.remove(event.player.uniqueId)
+        context.actionBar.clearState(event.player.uniqueId, "afk")
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

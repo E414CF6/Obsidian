@@ -37,6 +37,18 @@ class ObsidianConfig(private val plugin: Plugin) {
         private set
     var registerStandaloneAliases: Boolean = true
         private set
+    var uiActionBarHud: Boolean = true
+        private set
+    var uiBossBarTimers: Boolean = true
+        private set
+    var uiDialogsEnabled: Boolean = true
+        private set
+    var uiGuiLeaderboards: Boolean = true
+        private set
+    var uiMobfarmAutocleanBossbarSeconds: Int = 10
+        private set
+    var uiAfkKickWarningSeconds: Int = 30
+        private set
 
     init {
         reload()
@@ -61,6 +73,12 @@ class ObsidianConfig(private val plugin: Plugin) {
         mysqlUseSsl = y.getBoolean("storage.mysql.use-ssl", false)
         mysqlPoolSize = y.getInt("storage.mysql.pool-size", 10).coerceIn(1, 50)
         registerStandaloneAliases = y.getBoolean("commands.register-standalone-aliases", true)
+        uiActionBarHud = y.getBoolean("ui.actionbar-hud", true)
+        uiBossBarTimers = y.getBoolean("ui.bossbar-timers", true)
+        uiDialogsEnabled = y.getBoolean("ui.dialogs-enabled", true)
+        uiGuiLeaderboards = y.getBoolean("ui.gui-leaderboards", true)
+        uiMobfarmAutocleanBossbarSeconds = y.getInt("ui.mobfarm-autoclean-bossbar-seconds", 10).coerceIn(0, 60)
+        uiAfkKickWarningSeconds = y.getInt("ui.afk-kick-warning-seconds", 30).coerceIn(0, 300)
     }
 
     fun isModuleEnabled(moduleId: String, defaultEnabled: Boolean = true): Boolean =

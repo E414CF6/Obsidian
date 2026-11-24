@@ -12,6 +12,8 @@ import obsidian.core.database.*
 import obsidian.core.locale.LocaleService
 import obsidian.core.module.ModuleRegistry
 import obsidian.core.scheduler.ObsidianScheduler
+import obsidian.core.ui.ActionBarService
+import obsidian.core.ui.BossBarService
 import obsidian.core.user.UserService
 import obsidian.integration.MapMarkerService
 import org.bukkit.plugin.java.JavaPlugin
@@ -42,9 +44,11 @@ class ObsidianContext(val plugin: JavaPlugin) {
     val alertRepository = AlertRepository(database)
     val ipLockRepository = IpLockRepository(database)
 
+    val actionBar = ActionBarService(this)
+    val bossBar = BossBarService(this)
     val users = UserService(userRepository, scheduler, config)
     val cooldowns = CooldownService(config)
-    val warmups = WarmupService(config, locale, scheduler)
+    val warmups = WarmupService(config, locale, scheduler, actionBar)
     val modules = ModuleRegistry(plugin, config)
     val commandRegistry = ObsidianCommandRegistry()
     val commandAliases = CommandAliasService(this)
@@ -94,6 +98,8 @@ class ObsidianContext(val plugin: JavaPlugin) {
     fun shutdown() {
         commandAliases.shutdown()
         modules.disableAll()
+        actionBar.stop()
+        bossBar.stop()
         users.flushAllBlocking()
         scheduler.shutdown()
         database.close()

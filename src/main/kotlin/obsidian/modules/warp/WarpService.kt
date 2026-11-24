@@ -1,5 +1,6 @@
 package obsidian.modules.warp
 
+import io.papermc.paper.registry.data.dialog.input.DialogInput
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import obsidian.core.ObsidianContext
@@ -7,6 +8,7 @@ import obsidian.core.database.StoredLocation
 import obsidian.core.database.WarpRecord
 import obsidian.core.gui.MenuItems
 import obsidian.core.gui.MenuWindow
+import obsidian.core.ui.DialogBuilder
 import obsidian.modules.teleport.TeleportService
 import org.bukkit.Material
 import org.bukkit.command.CommandSender
@@ -109,6 +111,26 @@ class WarpService(
         return true
     }
 
+    fun updateWarpMetadata(
+        name: String,
+        group: String?,
+        requiresPermission: Boolean,
+        hidden: Boolean,
+    ): Boolean {
+        val key = name.lowercase()
+        val existing = warps[key] ?: return false
+        val updated = existing.copy(
+            groupName = group?.takeIf { it.isNotBlank() && !it.equals("none", ignoreCase = true) },
+            requiresPermission = requiresPermission,
+            hidden = hidden,
+        )
+        warps[key] = updated
+        context.scheduler.asyncScope.launch {
+            context.warpRepository.upsert(updated)
+        }
+        return true
+    }
+
     fun deleteWarp(name: String): Boolean {
         val removed = warps.remove(name.lowercase()) ?: return false
         context.scheduler.asyncScope.launch {
@@ -131,6 +153,7 @@ class WarpService(
             teleportService.teleport(player, loc, TeleportCause.COMMAND).thenAccept { ok ->
                 if (ok) {
                     context.locale.send(player, "warp.teleported", "warp" to warp.name)
+                    context.actionBar.pushTransientLocale(player, "warp.actionbar-teleported", "warp" to warp.name)
                 } else {
                     context.locale.send(player, "teleport.unsafe-location")
                 }
@@ -153,6 +176,7 @@ class WarpService(
         window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
 
         val slice = list.drop((currentPage - 1) * perPage).take(perPage)
+        val isAdmin = player.hasPermission("obsidian.command.setwarp") || player.hasPermission("obsidian.admin")
         var idx = 0
         for (row in 1..4) {
             for (col in 1..7) {
@@ -177,25 +201,140 @@ class WarpService(
                         )
                         add("")
                         add(context.locale.raw("warp.gui-click"))
+                        if (isAdmin) {
+                            add(context.locale.raw("warp.gui-admin-edit"))
+                        }
                     },
                 )
-                window.set(row * 9 + col, item) {
-                    player.closeInventory()
-                    teleportToWarp(player, warp)
+                window.set(row * 9 + col, item) { click ->
+                    if (isAdmin && click.clickType.isShiftClick && click.clickType.isRightClick) {
+                        click.player.closeInventory()
+                        openWarpEditorDialog(click.player, warp, currentPage, group)
+                    } else {
+                        player.closeInventory()
+                        teleportToWarp(player, warp)
+                    }
                 }
             }
         }
 
-        if (currentPage > 1) {
-            window.set(48, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-prev-page"))) {
-                openWarpsGui(player, currentPage - 1, group)
+        val groups = getWarpGroups(player)
+        if (groups.isNotEmpty() || group != null) {
+            window.set(
+                49,
+                MenuItems.item(
+                    Material.COMPASS,
+                    context.locale.raw(if (group == null) "warp.gui-groups-btn" else "warp.gui-groups-clear"),
+                    listOf(context.locale.raw("warp.gui-groups-lore")),
+                ),
+            ) { click ->
+                if (group != null) {
+                    openWarpsGui(click.player, 1, null)
+                } else {
+                    openWarpGroupsGui(click.player)
+                }
             }
         }
-        if (currentPage < totalPages) {
-            window.set(50, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-next-page"))) {
-                openWarpsGui(player, currentPage + 1, group)
+
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openWarpsGui(player, currentPage - 1, group) },
+            onNext = { openWarpsGui(player, currentPage + 1, group) },
+        )
+        window.open(player)
+    }
+
+    fun openWarpGroupsGui(player: Player) {
+        val groups = getWarpGroups(player)
+        val window = MenuWindow(context.locale.component("warp.groups-gui-title"), 4)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        window.set(
+            10,
+            MenuItems.item(
+                Material.NETHER_STAR,
+                context.locale.raw("warp.groups-all-name"),
+                listOf(context.locale.raw("warp.groups-entry-lore", "count" to getAccessibleWarps(player, null).size)),
+            ),
+        ) {
+            openWarpsGui(player, 1, null)
+        }
+
+        var slot = 11
+        for (g in groups) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 26) break
+            val count = getAccessibleWarps(player, g).size
+            window.set(
+                slot++,
+                MenuItems.item(
+                    Material.BOOK,
+                    "<aqua>$g</aqua>",
+                    listOf(context.locale.raw("warp.groups-entry-lore", "count" to count)),
+                ),
+            ) {
+                openWarpsGui(player, 1, g)
             }
         }
         window.open(player)
+    }
+
+    fun openWarpEditorDialog(player: Player, warp: WarpRecord, returnPage: Int = 1, returnGroup: String? = null) {
+        val inputs = listOf(
+            DialogInput.text("group", context.locale.component("warp.edit-group-label"))
+                .initial(warp.groupName ?: "")
+                .width(180)
+                .build(),
+            DialogInput.bool("perm", context.locale.component("warp.edit-perm-label"))
+                .initial(warp.requiresPermission)
+                .build(),
+            DialogInput.bool("hidden", context.locale.component("warp.edit-hidden-label"))
+                .initial(warp.hidden)
+                .build(),
+        )
+        val saveBtn = DialogBuilder.actionButton(
+            context,
+            player,
+            context.locale.component("general.dialog-save"),
+        ) { p, resp ->
+            val newGroup = resp.getText("group")?.trim()
+            val reqPerm = resp.getBoolean("perm") ?: warp.requiresPermission
+            val isHidden = resp.getBoolean("hidden") ?: warp.hidden
+            updateWarpMetadata(warp.name, newGroup, reqPerm, isHidden)
+            context.locale.send(p, "warp.updated", "warp" to warp.name)
+            openWarpsGui(p, returnPage, returnGroup)
+        }
+        val deleteBtn = DialogBuilder.actionButton(
+            context,
+            player,
+            context.locale.component("general.dialog-delete"),
+        ) { p, _ ->
+            DialogBuilder.confirm(
+                context = context,
+                player = p,
+                title = context.locale.component("warp.delete-dialog-title"),
+                bodyLines = listOf(context.locale.component("warp.delete-dialog-body", mapOf("warp" to warp.name))),
+                confirmLabel = context.locale.component("general.dialog-confirm"),
+                cancelLabel = context.locale.component("general.dialog-cancel"),
+                onConfirm = { confirmed ->
+                    deleteWarp(warp.name)
+                    context.locale.send(confirmed, "warp.removed", "warp" to warp.name)
+                    openWarpsGui(confirmed, returnPage, returnGroup)
+                },
+                onCancel = { cancelled -> openWarpsGui(cancelled, returnPage, returnGroup) },
+            )
+        }
+        DialogBuilder.multiAction(
+            context = context,
+            player = player,
+            title = context.locale.component("warp.edit-dialog-title", mapOf("warp" to warp.name)),
+            bodyLines = listOf(context.locale.component("warp.edit-dialog-body", mapOf("warp" to warp.name))),
+            actions = listOf(saveBtn, deleteBtn),
+            exitLabel = context.locale.component("general.dialog-cancel"),
+            columns = 2,
+            inputs = inputs,
+        )
     }
 }

@@ -3,6 +3,7 @@ package obsidian.modules.utility
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import net.kyori.adventure.text.Component
 import obsidian.core.ObsidianContext
+import obsidian.core.ui.ActionBarPriority
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.entity.EntityType
@@ -18,8 +19,7 @@ import org.bukkit.event.player.PlayerCommandPreprocessEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.SkullMeta
-import java.util.Locale
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
@@ -132,6 +132,7 @@ class CombatTagService(private val context: ObsidianContext) : Listener {
 
     fun clearCombat(uuid: UUID) {
         combatExpiry.remove(uuid)
+        context.actionBar.clearState(uuid, COMBAT_STATE_KEY)
     }
 
     private fun tickActionBars() {
@@ -141,21 +142,24 @@ class CombatTagService(private val context: ObsidianContext) : Listener {
             val player = Bukkit.getPlayer(uuid)
             if (player == null || !player.isOnline) {
                 combatExpiry.remove(uuid)
+                context.actionBar.clearState(uuid, COMBAT_STATE_KEY)
                 continue
             }
             val rem = exp - now
             if (rem <= 0L) {
                 combatExpiry.remove(uuid)
+                context.actionBar.clearState(uuid, COMBAT_STATE_KEY)
                 context.scheduler.runForEntity(player) {
                     if (player.isOnline) context.locale.send(player, "utility.combat-expired")
                 }
             } else {
                 val sec = ((rem + 999L) / 1000L).toInt()
-                context.scheduler.runForEntity(player) {
-                    if (player.isOnline) {
-                        context.locale.sendActionBar(player, "utility.combat-actionbar", "seconds" to sec)
-                    }
-                }
+                context.actionBar.setState(
+                    uuid,
+                    COMBAT_STATE_KEY,
+                    ActionBarPriority.COMBAT,
+                    context.locale.component("utility.combat-actionbar", mapOf("seconds" to sec.toString())),
+                )
             }
         }
     }
@@ -251,6 +255,8 @@ class CombatTagService(private val context: ObsidianContext) : Listener {
     }
 
     companion object {
+        private const val COMBAT_STATE_KEY = "combat"
+
         fun createPlayerSkull(name: String, onlineTarget: Player? = null): ItemStack {
             return ItemStack(Material.PLAYER_HEAD, 1).apply {
                 val meta = itemMeta as SkullMeta

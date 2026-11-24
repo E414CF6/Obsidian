@@ -130,7 +130,30 @@ object SpecializedCommandExecutor {
             lower.startsWith("actionbar:") -> {
                 val target = player ?: return
                 val payload = resolved.substring(10).trim()
-                target.sendActionBar(TextFormatter.format(payload))
+                context.actionBar.pushTransientRaw(target, payload)
+            }
+
+            lower.startsWith("bossbar:") -> {
+                val target = player ?: return
+                val parts = resolved.substring(8).split('|', limit = 3)
+                val color = runCatching {
+                    net.kyori.adventure.bossbar.BossBar.Color.valueOf(parts[0].trim().uppercase())
+                }.getOrDefault(net.kyori.adventure.bossbar.BossBar.Color.YELLOW)
+                val seconds = parts.getOrNull(1)?.trim()?.toIntOrNull()?.coerceIn(1, 300) ?: 5
+                val msg = parts.getOrNull(2)?.trim() ?: parts.last().trim()
+                context.bossBar.showTimed(
+                    player = target,
+                    id = "spec_${target.uniqueId}",
+                    title = TextFormatter.format(msg),
+                    durationMillis = seconds * 1000L,
+                    color = color,
+                )
+            }
+
+            lower.startsWith("dialog:") -> {
+                val target = player ?: return
+                val id = resolved.substring(7).trim()
+                context.getService<obsidian.modules.visual.DialogService>()?.openDialog(target, id)
             }
 
             lower.startsWith("title:") -> {

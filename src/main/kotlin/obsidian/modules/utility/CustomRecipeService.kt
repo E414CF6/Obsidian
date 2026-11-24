@@ -145,6 +145,11 @@ class CustomRecipeService(private val context: ObsidianContext) {
         return list
     }
 
+    fun getRegisteredRecipe(id: String): Recipe? {
+        val nsKey = NamespacedKey(context.plugin, "custom_${id.lowercase()}")
+        return Bukkit.getRecipe(nsKey)
+    }
+
     fun deleteRecipe(id: String): Boolean {
         if (!recipeFile.exists()) return false
         val yaml = YamlConfiguration.loadConfiguration(recipeFile)

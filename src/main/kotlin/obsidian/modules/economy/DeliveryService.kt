@@ -15,9 +15,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.inventory.ItemStack
 import java.text.SimpleDateFormat
-import java.util.Base64
-import java.util.Date
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 
@@ -78,6 +76,11 @@ class DeliveryService(private val context: ObsidianContext) : Listener {
                 context.scheduler.runForEntity(online) {
                     if (online.isOnline) {
                         context.locale.send(online, "economy.delivery-received", "sender" to senderName)
+                        context.actionBar.pushTransientLocale(
+                            online,
+                            "economy.delivery-received",
+                            "sender" to senderName
+                        )
                     }
                 }
             }
@@ -199,6 +202,11 @@ class DeliveryService(private val context: ObsidianContext) : Listener {
                 context.scheduler.runForEntityDelayed(player, 40L) {
                     if (player.isOnline) {
                         context.locale.send(player, "economy.delivery-pending-notify", "count" to pending.size)
+                        context.actionBar.pushTransientLocale(
+                            player,
+                            "economy.delivery-pending-notify",
+                            "count" to pending.size
+                        )
                     }
                 }
             }

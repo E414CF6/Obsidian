@@ -8,10 +8,15 @@ import io.papermc.paper.command.brigadier.argument.ArgumentTypes
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
 import io.papermc.paper.registry.RegistryAccess
 import io.papermc.paper.registry.RegistryKey
+import io.papermc.paper.registry.data.dialog.input.DialogInput
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.database.StoredLocation
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.module.ObsidianModule
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
@@ -215,6 +220,10 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     context.locale.send(sender, "visual.portal-list-empty")
                     return@executes Command.SINGLE_SUCCESS
                 }
+                if (sender is org.bukkit.entity.Player) {
+                    openPortalsGui(sender)
+                    return@executes Command.SINGLE_SUCCESS
+                }
                 context.locale.send(sender, "visual.portal-list-header", "count" to list.size)
                 list.forEach { p ->
                     val dest = p.targetWarp?.let { "warp:$it" } ?: p.targetLocation?.world ?: "commands"
@@ -231,6 +240,74 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registrar.register(context.plugin.pluginMeta, portalsNode, "List configured portals", emptyList())
     }
 
+    private fun openPortalsGui(player: org.bukkit.entity.Player) {
+        val list = portalService.getAllPortals()
+        if (list.isEmpty()) {
+            context.locale.send(player, "visual.portal-list-empty")
+            return
+        }
+        val window =
+            MenuWindow(context.locale.component("visual.portal-gui-title", mapOf("count" to list.size.toString())), 5)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        var slot = 10
+        for (p in list) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) break
+            val dest = p.targetWarp?.let { "warp:$it" } ?: p.targetLocation?.world ?: "commands"
+            val state = context.locale.raw(if (p.enabled) "general.state-on" else "general.state-off")
+            val item = MenuItems.item(
+                if (p.enabled) Material.NETHER_PORTAL else Material.OBSIDIAN,
+                "<light_purple>${p.name}</light_purple> <gray>[$state<gray>]",
+                listOf(
+                    context.locale.raw("general.gui-world", "world" to p.region.worldName),
+                    context.locale.raw("visual.portal-gui-dest", "dest" to dest),
+                    "",
+                    context.locale.raw("visual.portal-gui-tp"),
+                    context.locale.raw("visual.portal-gui-toggle"),
+                    context.locale.raw("visual.portal-gui-delete"),
+                ),
+            )
+            window.set(slot++, item) { click ->
+                when {
+                    click.clickType.isShiftClick && click.clickType.isRightClick -> {
+                        click.player.closeInventory()
+                        DialogBuilder.confirm(
+                            context = context,
+                            player = click.player,
+                            title = context.locale.component("visual.portal-delete-title"),
+                            bodyLines = listOf(
+                                context.locale.component(
+                                    "visual.portal-delete-body",
+                                    mapOf("name" to p.name)
+                                )
+                            ),
+                            confirmLabel = context.locale.component("general.dialog-confirm"),
+                            cancelLabel = context.locale.component("general.dialog-cancel"),
+                            onConfirm = { cp ->
+                                portalService.removePortal(p.name)
+                                context.locale.send(cp, "visual.portal-removed", "name" to p.name)
+                                openPortalsGui(cp)
+                            },
+                            onCancel = { cp -> openPortalsGui(cp) },
+                        )
+                    }
+
+                    click.clickType.isRightClick -> {
+                        p.enabled = !p.enabled
+                        portalService.createOrUpdatePortal(p)
+                        openPortalsGui(click.player)
+                    }
+
+                    else -> {
+                        click.player.closeInventory()
+                        p.region.centerLocation()?.let { click.player.teleportAsync(it) }
+                    }
+                }
+            }
+        }
+        window.open(player)
+    }
+
     private fun registerHologramCommands(registrar: Commands) {
         val node = Commands.literal("hologram")
             .requires { it.sender.hasPermission("obsidian.command.hologram") || it.sender.hasPermission("obsidian.admin") }
@@ -240,6 +317,10 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     val all = hologramService.getAllHolograms()
                     if (all.isEmpty()) {
                         context.locale.send(sender, "visual.hologram-list-empty")
+                        return@executes Command.SINGLE_SUCCESS
+                    }
+                    if (sender is org.bukkit.entity.Player) {
+                        openHologramsGui(sender)
                         return@executes Command.SINGLE_SUCCESS
                     }
                     context.locale.send(sender, "visual.hologram-list-header", "count" to all.size)
@@ -490,6 +571,16 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
     private fun registerSignCommands(registrar: Commands) {
         val signEditNode = Commands.literal("signedit")
             .requires { it.sender.hasPermission("obsidian.command.signedit") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val sign = signService.findTargetSign(player)
+                if (sign == null) {
+                    context.locale.send(player, "visual.sign-not-found")
+                    return@executes 0
+                }
+                openSignEditorDialog(player, sign)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.argument("line", IntegerArgumentType.integer(1, 4)).executes { ctx ->
                     val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
@@ -584,6 +675,90 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registrar.register(
             context.plugin.pluginMeta, dsignNode, "Manage placeholder-powered dynamic signs", emptyList()
         )
+    }
+
+    private fun openHologramsGui(player: org.bukkit.entity.Player) {
+        val all = hologramService.getAllHolograms()
+        if (all.isEmpty()) {
+            context.locale.send(player, "visual.hologram-list-empty")
+            return
+        }
+        val window =
+            MenuWindow(context.locale.component("visual.hologram-gui-title", mapOf("count" to all.size.toString())), 5)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        var slot = 10
+        for (h in all) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) break
+            val item = MenuItems.item(
+                Material.NAME_TAG,
+                "<aqua>${h.id}</aqua>",
+                listOf(
+                    context.locale.raw("general.gui-world", "world" to h.location.world),
+                    context.locale.raw("visual.hologram-gui-lines", "lines" to h.lines.size),
+                    "",
+                    context.locale.raw("visual.hologram-gui-tp"),
+                    context.locale.raw("visual.hologram-gui-delete"),
+                ),
+            )
+            window.set(slot++, item) { click ->
+                if (click.clickType.isShiftClick && click.clickType.isRightClick) {
+                    click.player.closeInventory()
+                    DialogBuilder.confirm(
+                        context = context,
+                        player = click.player,
+                        title = context.locale.component("visual.hologram-delete-title"),
+                        bodyLines = listOf(
+                            context.locale.component(
+                                "visual.hologram-delete-body",
+                                mapOf("id" to h.id)
+                            )
+                        ),
+                        confirmLabel = context.locale.component("general.dialog-confirm"),
+                        cancelLabel = context.locale.component("general.dialog-cancel"),
+                        onConfirm = { p ->
+                            hologramService.deleteHologram(h.id)
+                            context.locale.send(p, "visual.hologram-deleted", "id" to h.id)
+                            openHologramsGui(p)
+                        },
+                        onCancel = { p -> openHologramsGui(p) },
+                    )
+                } else {
+                    click.player.closeInventory()
+                    h.location.toBukkitLocation()?.let { click.player.teleportAsync(it) }
+                }
+            }
+        }
+        window.open(player)
+    }
+
+    private fun openSignEditorDialog(player: org.bukkit.entity.Player, sign: org.bukkit.block.Sign) {
+        val mm = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
+        val front = sign.getSide(Side.FRONT)
+        val inputs = (1..4).map { lineNum ->
+            val current = mm.serialize(front.line(lineNum - 1))
+            DialogInput.text(
+                "line$lineNum",
+                context.locale.component("visual.sign-dialog-line", mapOf("line" to lineNum.toString()))
+            )
+                .initial(current)
+                .width(220)
+                .build()
+        }
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("visual.sign-dialog-title"),
+            inputs = inputs,
+            submitLabel = context.locale.component("general.dialog-save"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+        ) { p, resp ->
+            val blockState = sign.block.state as? org.bukkit.block.Sign ?: return@form
+            for (i in 1..4) {
+                signService.editSignLine(blockState, Side.FRONT, i, resp.getText("line$i").orEmpty())
+            }
+            context.actionBar.pushTransientLocale(p, "visual.sign-dialog-saved")
+        }
     }
 
     private fun registerWorldAndBuildTools(registrar: Commands) {
@@ -749,6 +924,14 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                 val startLoc = player.location.clone()
                 val world = startLoc.world ?: return@executes 0
                 context.locale.send(player, "visual.biome-searching", "biome" to targetBiome.key.key)
+                val barId = "findbiome_${player.uniqueId}"
+                context.bossBar.showStatic(
+                    player = player,
+                    id = barId,
+                    title = context.locale.component("visual.biome-bossbar", mapOf("biome" to targetBiome.key.key)),
+                    progress = 0.1f,
+                    color = BossBar.Color.BLUE,
+                )
                 context.scheduler.runAsync {
                     val step = 64
                     val maxRadius = 6400
@@ -757,6 +940,19 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     val sz = startLoc.blockZ
                     val sy = startLoc.blockY.coerceIn(world.minHeight + 1, world.maxHeight - 1)
                     outer@ for (r in step..maxRadius step step) {
+                        if (!player.isOnline) break
+                        if (r % (step * 8) == 0) {
+                            context.bossBar.showStatic(
+                                player = player,
+                                id = barId,
+                                title = context.locale.component(
+                                    "visual.biome-bossbar",
+                                    mapOf("biome" to targetBiome.key.key)
+                                ),
+                                progress = (r.toFloat() / maxRadius.toFloat()).coerceIn(0f, 1f),
+                                color = BossBar.Color.BLUE,
+                            )
+                        }
                         for (dx in -r..r step step) {
                             for (dz in listOf(-r, r)) {
                                 if (world.getBiome(sx + dx, sy, sz + dz) == targetBiome) {
@@ -775,6 +971,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                         }
                     }
                     context.scheduler.runForEntity(player) {
+                        context.bossBar.hide(player, barId)
                         if (!player.isOnline) return@runForEntity
                         if (found == null) {
                             context.locale.send(player, "visual.biome-not-found", "biome" to targetBiome.key.key)
@@ -782,6 +979,13 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                             context.locale.send(
                                 player,
                                 "visual.biome-found",
+                                "biome" to targetBiome.key.key,
+                                "x" to found.blockX,
+                                "z" to found.blockZ,
+                            )
+                            context.actionBar.pushTransientLocale(
+                                player,
+                                "visual.biome-actionbar",
                                 "biome" to targetBiome.key.key,
                                 "x" to found.blockX,
                                 "z" to found.blockZ,

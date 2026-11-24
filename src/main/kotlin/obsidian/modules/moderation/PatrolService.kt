@@ -29,6 +29,13 @@ class PatrolService(private val context: ObsidianContext) {
         val target = candidates[nextIdx]
 
         staff.teleportAsync(target.location, TeleportCause.COMMAND)
+        context.actionBar.pushTransientLocale(
+            staff,
+            "moderation.patrol-actionbar",
+            "target" to target.name,
+            "world" to target.world.name,
+            "ping" to target.ping,
+        )
         return target
     }
 }

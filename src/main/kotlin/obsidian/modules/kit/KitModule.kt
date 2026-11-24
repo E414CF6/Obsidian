@@ -114,6 +114,11 @@ class KitModule(private val context: ObsidianContext) : ObsidianModule {
 
         val editorNode = Commands.literal("kiteditor")
             .requires { it.sender.hasPermission("obsidian.command.kiteditor") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                kitService.openKitEditorGui(player, 1)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.literal("create").then(
                     Commands.argument("name", StringArgumentType.word()).executes { ctx ->

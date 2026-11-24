@@ -360,3 +360,11 @@ maps:
   show-warps: true
   show-spawn: true
   show-portals: true
+
+ui:
+  actionbar-hud: true
+  bossbar-timers: true
+  dialogs-enabled: true
+  gui-leaderboards: true
+  mobfarm-autoclean-bossbar-seconds: 10
+  afk-kick-warning-seconds: 30

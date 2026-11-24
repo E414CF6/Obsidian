@@ -8,16 +8,25 @@ import com.mojang.brigadier.arguments.StringArgumentType
 import io.papermc.paper.command.brigadier.Commands
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
+import io.papermc.paper.registry.data.dialog.input.DialogInput
+import io.papermc.paper.registry.data.dialog.input.SingleOptionDialogInput
+import net.kyori.adventure.bossbar.BossBar
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.database.AlertRecord
 import obsidian.core.database.IpLockRecord
+import obsidian.core.database.PunishmentRecord
 import obsidian.core.database.PunishmentType
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.command.CommandSender
+import org.bukkit.entity.Player
 import org.bukkit.event.Listener
 import java.text.SimpleDateFormat
 import java.util.*
@@ -70,6 +79,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
         registerAdminInvestigation(registrar)
         registerAuditCommands(registrar)
         registerTier3Moderation(registrar)
+        registerPunishCommand(registrar)
     }
 
     private fun registerBanCommands(registrar: Commands) {
@@ -789,6 +799,10 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                     context.locale.send(sender, "moderation.warnings-empty", "target" to id.name)
                     return@dispatchAsync
                 }
+                if (sender is Player) {
+                    openWarningsGui(sender, id.name, list, 1)
+                    return@dispatchAsync
+                }
                 context.locale.send(
                     sender,
                     "moderation.warnings-header",
@@ -1167,16 +1181,21 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             val warnings = moderationService.getActiveWarnings(profile.uuid).size
                             val mute = moderationService.getActiveMute(profile.uuid)
                             val jail = moderationService.getActiveJail(profile.uuid)
-                            moderationService.formatInfoLines(
+                            val lines = moderationService.formatInfoLines(
                                 profile, id.onlinePlayer, id.ip, warnings, mute, jail
                             )
+                            Triple(id, profile, lines)
                         }
                     },
-                    onResult = { lines ->
-                        if (lines == null) {
+                    onResult = { result ->
+                        if (result == null) {
                             context.locale.send(sender, "general.player-not-found", "player" to query)
                         } else {
+                            val (id, profile, lines) = result
                             lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
+                            if (sender is Player) {
+                                openPlayerInfoGui(sender, id, profile, lines)
+                            }
                         }
                     },
                 )
@@ -1233,6 +1252,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 val next = !maintenanceAndNoteService.maintenanceEnabled
                 maintenanceAndNoteService.setMaintenance(next)
+                syncMaintenanceBossBar(next, maintenanceAndNoteService.maintenanceReason)
                 context.locale.send(
                     ctx.source.sender,
                     "moderation.maintenance-toggled",
@@ -1242,6 +1262,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(Commands.literal("on").executes { ctx ->
                 maintenanceAndNoteService.setMaintenance(true)
+                syncMaintenanceBossBar(true, maintenanceAndNoteService.maintenanceReason)
                 context.locale.send(
                     ctx.source.sender,
                     "moderation.maintenance-toggled",
@@ -1252,12 +1273,14 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             }.then(Commands.argument("reason", StringArgumentType.greedyString()).executes { ctx ->
                 val reason = StringArgumentType.getString(ctx, "reason")
                 maintenanceAndNoteService.setMaintenance(true, reason)
+                syncMaintenanceBossBar(true, reason)
                 context.locale.send(
                     ctx.source.sender, "moderation.maintenance-toggled", "state" to "on", "reason" to reason
                 )
                 Command.SINGLE_SUCCESS
             })).then(Commands.literal("off").executes { ctx ->
                 maintenanceAndNoteService.setMaintenance(false)
+                syncMaintenanceBossBar(false, maintenanceAndNoteService.maintenanceReason)
                 context.locale.send(
                     ctx.source.sender,
                     "moderation.maintenance-toggled",
@@ -1893,6 +1916,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 val next = !maintenanceAndNoteService.maintenanceEnabled
                 maintenanceAndNoteService.setMaintenance(next)
+                syncMaintenanceBossBar(next, maintenanceAndNoteService.maintenanceReason)
                 context.locale.send(
                     ctx.source.sender,
                     "moderation.maintenance-toggled",
@@ -1902,6 +1926,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 Command.SINGLE_SUCCESS
             }.then(Commands.literal("end").executes { ctx ->
                 maintenanceAndNoteService.setMaintenance(false)
+                syncMaintenanceBossBar(false, maintenanceAndNoteService.maintenanceReason)
                 context.locale.send(
                     ctx.source.sender,
                     "moderation.maintenance-toggled",
@@ -1913,6 +1938,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 val reason = StringArgumentType.getString(ctx, "reason")
                 if (reason.equals("end", ignoreCase = true) || reason.equals("off", ignoreCase = true)) {
                     maintenanceAndNoteService.setMaintenance(false)
+                    syncMaintenanceBossBar(false, maintenanceAndNoteService.maintenanceReason)
                     context.locale.send(
                         ctx.source.sender,
                         "moderation.maintenance-toggled",
@@ -1921,6 +1947,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                     )
                 } else {
                     maintenanceAndNoteService.setMaintenance(true, reason)
+                    syncMaintenanceBossBar(true, reason)
                     context.locale.send(
                         ctx.source.sender, "moderation.maintenance-toggled", "state" to "on", "reason" to reason
                     )
@@ -1954,6 +1981,10 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             onResult = { (total, list) ->
                 if (list.isEmpty() && page == 1) {
                     context.locale.sendRaw(sender, "moderation.list-empty", "title" to title)
+                    return@dispatchAsync
+                }
+                if (sender is Player) {
+                    openPunishmentListGui(sender, types, title, list, total, page)
                     return@dispatchAsync
                 }
                 val maxPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
@@ -2003,6 +2034,10 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             onResult = { (name, total, list) ->
                 if (list.isEmpty() && page == 1) {
                     context.locale.sendRaw(sender, "moderation.history-empty", "target" to name)
+                    return@dispatchAsync
+                }
+                if (sender is Player) {
+                    openHistoryGui(sender, name, query, list, total, page)
                     return@dispatchAsync
                 }
                 val maxPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
@@ -2723,5 +2758,441 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 )
             },
         )
+    }
+
+    private fun syncMaintenanceBossBar(enabled: Boolean, reason: String) {
+        if (enabled) {
+            context.bossBar.showGlobalCountdown(
+                id = "maintenance_mode",
+                durationSeconds = 3600,
+                color = BossBar.Color.YELLOW,
+                overlay = BossBar.Overlay.PROGRESS,
+                titleProvider = {
+                    context.locale.component("moderation.maintenance-bossbar", mapOf("reason" to reason))
+                },
+                onComplete = {
+                    if (maintenanceAndNoteService.maintenanceEnabled) {
+                        syncMaintenanceBossBar(true, maintenanceAndNoteService.maintenanceReason)
+                    }
+                },
+            )
+        } else {
+            context.bossBar.hideGlobal("maintenance_mode")
+        }
+    }
+
+    private fun registerPunishCommand(registrar: Commands) {
+        val node = Commands.literal("punish")
+            .requires {
+                it.sender.hasPermission("obsidian.command.punish") ||
+                        it.sender.hasPermission("obsidian.command.ban") ||
+                        it.sender.hasPermission("obsidian.admin")
+            }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                openPunishPlayerSelectorGui(player, 1)
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                    CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val target = StringArgumentType.getString(ctx, "target")
+                    openPunishDialog(player, target)
+                    Command.SINGLE_SUCCESS
+                }
+            )
+            .build()
+        registrar.register(context.plugin.pluginMeta, node, "Open punishment dialog for a player", listOf("p"))
+    }
+
+    private fun openPunishPlayerSelectorGui(staff: Player, page: Int) {
+        val candidates = Bukkit.getOnlinePlayers()
+            .filter { it.uniqueId != staff.uniqueId }
+            .sortedBy { it.name.lowercase() }
+        if (candidates.isEmpty()) {
+            context.locale.send(staff, "moderation.patrol-none")
+            return
+        }
+        val perPage = 28
+        val totalPages = ((candidates.size - 1) / perPage) + 1
+        val currentPage = page.coerceIn(1, totalPages)
+        val window = MenuWindow(context.locale.component("moderation.punish-gui-title"), 6)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        val slice = candidates.drop((currentPage - 1) * perPage).take(perPage)
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val target = slice[idx++]
+                window.set(
+                    row * 9 + col,
+                    MenuItems.playerHead(
+                        target.uniqueId,
+                        target.name,
+                        "<red>${target.name}</red>",
+                        listOf(context.locale.raw("moderation.punish-gui-lore")),
+                    ),
+                ) { click ->
+                    click.player.closeInventory()
+                    openPunishDialog(click.player, target.name)
+                }
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openPunishPlayerSelectorGui(staff, currentPage - 1) },
+            onNext = { openPunishPlayerSelectorGui(staff, currentPage + 1) },
+        )
+        window.open(staff)
+    }
+
+    private fun openPunishDialog(staff: Player, targetName: String) {
+        val types = listOf(
+            SingleOptionDialogInput.OptionEntry.create("warn", TextFormatter.format("<yellow>WARN</yellow>"), true),
+            SingleOptionDialogInput.OptionEntry.create("mute", TextFormatter.format("<gold>MUTE</gold>"), false),
+            SingleOptionDialogInput.OptionEntry.create("kick", TextFormatter.format("<red>KICK</red>"), false),
+            SingleOptionDialogInput.OptionEntry.create("ban", TextFormatter.format("<dark_red>BAN</dark_red>"), false),
+        )
+        val inputs = listOf(
+            DialogInput.singleOption("type", context.locale.component("moderation.punish-type-label"), types)
+                .width(200).build(),
+            DialogInput.text("duration", context.locale.component("moderation.punish-duration-label"))
+                .initial("").width(200).build(),
+            DialogInput.text("reason", context.locale.component("moderation.punish-reason-label"))
+                .initial("").width(240).build(),
+            DialogInput.bool("silent", context.locale.component("moderation.punish-silent-label"))
+                .initial(moderationService.silentByDefault).build(),
+            DialogInput.bool("ip", context.locale.component("moderation.punish-ip-label"))
+                .initial(false).build(),
+        )
+        DialogBuilder.form(
+            context = context,
+            player = staff,
+            title = context.locale.component("moderation.punish-dialog-title", mapOf("target" to targetName)),
+            bodyLines = listOf(
+                context.locale.component(
+                    "moderation.punish-dialog-body",
+                    mapOf("target" to targetName)
+                )
+            ),
+            inputs = inputs,
+            submitLabel = context.locale.component("moderation.punish-submit"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+        ) { p, resp ->
+            val type = resp.getText("type")?.lowercase() ?: "warn"
+            val duration = resp.getText("duration")?.trim().orEmpty()
+            val reason = resp.getText("reason")?.trim().orEmpty()
+            val silentFlag = if (resp.getBoolean("silent") == true) "-s" else ""
+            val ip = resp.getBoolean("ip") == true
+            val tail =
+                listOf(silentFlag, duration, reason).filter { it.isNotBlank() }.joinToString(" ").ifBlank { null }
+
+            when (type) {
+                "ban" -> executeBanWithTail(p, targetName, tail, ipBan = ip)
+                "mute" -> executeMuteWithTail(p, targetName, tail, ipMute = ip, shadow = false)
+                "kick" -> executeKick(p, targetName, reason.ifBlank { moderationService.defaultKickReason })
+                else -> executeWarnWithTail(
+                    p,
+                    targetName,
+                    listOf(silentFlag, reason).filter { it.isNotBlank() }.joinToString(" ").ifBlank { null })
+            }
+        }
+    }
+
+    private fun openPlayerInfoGui(
+        staff: Player,
+        id: ModerationService.TargetIdentity,
+        profile: obsidian.core.user.UserProfile,
+        lines: List<String>,
+    ) {
+        val window =
+            MenuWindow(context.locale.component("moderation.info-gui-title", mapOf("player" to profile.username)), 4)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        window.set(
+            13,
+            MenuItems.playerHead(
+                id.uuid,
+                profile.username,
+                "<aqua>${profile.username}</aqua>",
+                lines.drop(1),
+            ),
+        )
+        window.set(
+            20,
+            MenuItems.item(
+                Material.CHEST,
+                context.locale.raw("moderation.info-btn-inv"),
+                listOf(context.locale.raw("moderation.info-btn-inv-lore"))
+            ),
+        ) { click ->
+            click.player.closeInventory()
+            id.onlinePlayer?.let { click.player.openInventory(it.inventory) }
+                ?: context.locale.send(click.player, "general.player-not-found", "player" to profile.username)
+        }
+        window.set(
+            21,
+            MenuItems.item(
+                Material.PAPER,
+                context.locale.raw("moderation.info-btn-warnings"),
+                listOf(context.locale.raw("moderation.info-btn-warnings-lore"))
+            ),
+        ) { click ->
+            showWarnings(click.player, profile.username)
+        }
+        window.set(
+            22,
+            MenuItems.item(
+                Material.BOOK,
+                context.locale.raw("moderation.info-btn-history"),
+                listOf(context.locale.raw("moderation.info-btn-history-lore"))
+            ),
+        ) { click ->
+            displayHistory(click.player, profile.username, 1)
+        }
+        window.set(
+            23,
+            MenuItems.item(
+                Material.IRON_AXE,
+                context.locale.raw("moderation.info-btn-punish"),
+                listOf(context.locale.raw("moderation.info-btn-punish-lore"))
+            ),
+        ) { click ->
+            click.player.closeInventory()
+            openPunishDialog(click.player, profile.username)
+        }
+        window.set(
+            24,
+            MenuItems.item(
+                Material.ENDER_PEARL,
+                context.locale.raw("moderation.info-btn-tp"),
+                listOf(context.locale.raw("moderation.info-btn-tp-lore"))
+            ),
+        ) { click ->
+            click.player.closeInventory()
+            id.onlinePlayer?.let { click.player.teleportAsync(it.location) }
+                ?: context.locale.send(click.player, "general.player-not-found", "player" to profile.username)
+        }
+        window.open(staff)
+    }
+
+    private fun openWarningsGui(
+        staff: Player,
+        targetName: String,
+        warnings: List<PunishmentRecord>,
+        page: Int,
+    ) {
+        val perPage = 28
+        val totalPages = ((warnings.size - 1).coerceAtLeast(0) / perPage) + 1
+        val currentPage = page.coerceIn(1, totalPages)
+        val window = MenuWindow(
+            context.locale.component(
+                "moderation.warnings-gui-title",
+                mapOf("target" to targetName, "count" to warnings.size.toString())
+            ),
+            6,
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+
+        val from = (currentPage - 1) * perPage
+        val slice = warnings.drop(from).take(perPage)
+        var idx = 0
+        for (row in 1..4) {
+            for (col in 1..7) {
+                if (idx >= slice.size) break
+                val w = slice[idx]
+                val num = from + idx + 1
+                idx++
+                val item = MenuItems.item(
+                    Material.PAPER,
+                    "<yellow>#$num</yellow> <white>${w.reason}</white>",
+                    listOf(
+                        "<gray>Actor: <white>${w.actorName}</white></gray>",
+                        "<gray>Date: <white>${formatDate(w.createdAt)}</white></gray>",
+                    ),
+                )
+                window.set(row * 9 + col, item)
+            }
+        }
+        if (staff.hasPermission("obsidian.command.clearwarnings") || staff.hasPermission("obsidian.admin")) {
+            window.set(
+                49,
+                MenuItems.item(Material.LAVA_BUCKET, context.locale.raw("moderation.warnings-gui-clear"))
+            ) { click ->
+                click.player.closeInventory()
+                DialogBuilder.confirm(
+                    context = context,
+                    player = click.player,
+                    title = context.locale.component("moderation.warnings-clear-dialog-title"),
+                    bodyLines = listOf(
+                        context.locale.component(
+                            "moderation.warnings-clear-dialog-body",
+                            mapOf("target" to targetName)
+                        )
+                    ),
+                    confirmLabel = context.locale.component("general.dialog-confirm"),
+                    cancelLabel = context.locale.component("general.dialog-cancel"),
+                    onConfirm = { p ->
+                        CommandHelper.dispatchAsync(
+                            context,
+                            p,
+                            asyncWork = {
+                                val id = moderationService.resolveTarget(targetName)
+                                id?.uuid?.let { moderationService.clearWarnings(it) }
+                                id
+                            },
+                            onResult = { id ->
+                                if (id != null) {
+                                    context.locale.send(p, "moderation.warnings-cleared", "target" to id.name)
+                                }
+                            },
+                        )
+                    },
+                    onCancel = { p -> openWarningsGui(p, targetName, warnings, currentPage) },
+                )
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openWarningsGui(staff, targetName, warnings, currentPage - 1) },
+            onNext = { openWarningsGui(staff, targetName, warnings, currentPage + 1) },
+        )
+        window.open(staff)
+    }
+
+    private fun openPunishmentListGui(
+        staff: Player,
+        types: List<PunishmentType>,
+        title: String,
+        list: List<PunishmentRecord>,
+        total: Int,
+        page: Int,
+    ) {
+        val maxPages = ((total + 4) / 5).coerceAtLeast(1)
+        val window = MenuWindow(
+            context.locale.component(
+                "moderation.list-gui-title",
+                mapOf("title" to title, "page" to page.toString(), "maxPages" to maxPages.toString())
+            ),
+            5,
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        list.forEachIndexed { idx, rec ->
+            val slot = 11 + idx
+            val targetName = rec.targetName ?: rec.targetIp ?: "Unknown"
+            val expires = DurationParser.formatExpiry(rec.expiresAt, rec.createdAt)
+            val mat = when (rec.type) {
+                PunishmentType.BAN, PunishmentType.IP_BAN -> Material.RED_WOOL
+                PunishmentType.MUTE, PunishmentType.IP_MUTE, PunishmentType.SHADOW_MUTE -> Material.ORANGE_WOOL
+                else -> Material.YELLOW_WOOL
+            }
+            val item = MenuItems.item(
+                mat,
+                "<red>$targetName</red>",
+                listOf(
+                    "<gray>Type: <white>${rec.type}</white></gray>",
+                    "<gray>Actor: <white>${rec.actorName}</white></gray>",
+                    "<gray>Reason: <white>${rec.reason}</white></gray>",
+                    "<gray>Expires: <white>$expires</white></gray>",
+                    "",
+                    context.locale.raw("moderation.list-gui-click"),
+                ),
+            )
+            window.set(slot, item) { click ->
+                click.player.closeInventory()
+                DialogBuilder.confirm(
+                    context = context,
+                    player = click.player,
+                    title = context.locale.component("moderation.pardon-dialog-title"),
+                    bodyLines = listOf(
+                        context.locale.component(
+                            "moderation.pardon-dialog-body",
+                            mapOf("target" to targetName, "type" to rec.type.name)
+                        )
+                    ),
+                    confirmLabel = context.locale.component("general.dialog-confirm"),
+                    cancelLabel = context.locale.component("general.dialog-cancel"),
+                    onConfirm = { p ->
+                        when (rec.type) {
+                            PunishmentType.BAN, PunishmentType.IP_BAN -> executeUnban(p, targetName, "GUI pardon")
+                            PunishmentType.MUTE, PunishmentType.IP_MUTE, PunishmentType.SHADOW_MUTE -> executeUnmute(
+                                p,
+                                targetName,
+                                "GUI pardon"
+                            )
+
+                            PunishmentType.WARN -> executeUnwarn(p, targetName, "GUI pardon")
+                            else -> Unit
+                        }
+                    },
+                    onCancel = { p -> displayPunishmentList(p, types, title, page) },
+                )
+            }
+        }
+        window.setFooterNav(
+            context = context,
+            page = page,
+            totalPages = maxPages,
+            prevSlot = 39,
+            nextSlot = 41,
+            onPrev = { displayPunishmentList(staff, types, title, page - 1) },
+            onNext = { displayPunishmentList(staff, types, title, page + 1) },
+        )
+        window.open(staff)
+    }
+
+    private fun openHistoryGui(
+        staff: Player,
+        targetName: String,
+        query: String,
+        list: List<PunishmentRecord>,
+        total: Int,
+        page: Int,
+    ) {
+        val maxPages = ((total + 4) / 5).coerceAtLeast(1)
+        val window = MenuWindow(
+            context.locale.component(
+                "moderation.history-gui-title",
+                mapOf("target" to targetName, "page" to page.toString(), "maxPages" to maxPages.toString())
+            ),
+            5,
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        list.forEachIndexed { idx, rec ->
+            val slot = 11 + idx
+            val mat = if (rec.active) Material.LIME_CONCRETE else Material.GRAY_CONCRETE
+            val status = context.locale.raw(if (rec.active) "moderation.status-active" else "moderation.status-expired")
+            val item = MenuItems.item(
+                mat,
+                "<aqua>${rec.type}</aqua> <gray>($status<gray>)",
+                buildList {
+                    add("<gray>Actor: <white>${rec.actorName}</white></gray>")
+                    add("<gray>Reason: <white>${rec.reason}</white></gray>")
+                    add("<gray>Date: <white>${formatDate(rec.createdAt)}</white></gray>")
+                    if (rec.removedByName != null) {
+                        add("<dark_gray>Removed by ${rec.removedByName}: ${rec.removedReason ?: "-"}</dark_gray>")
+                    }
+                },
+            )
+            window.set(slot, item)
+        }
+        window.setFooterNav(
+            context = context,
+            page = page,
+            totalPages = maxPages,
+            prevSlot = 39,
+            nextSlot = 41,
+            onPrev = { displayHistory(staff, query, page - 1) },
+            onNext = { displayHistory(staff, query, page + 1) },
+        )
+        window.open(staff)
     }
 }

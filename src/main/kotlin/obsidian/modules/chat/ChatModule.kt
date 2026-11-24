@@ -451,7 +451,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
                     Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
                         val targetArg = StringArgumentType.getString(ctx, "target")
                         val comp = TextFormatter.format(StringArgumentType.getString(ctx, "message"))
-                        resolveAudiences(targetArg).forEach { it.sendActionBar(comp) }
+                        resolveAudiences(targetArg).forEach { context.actionBar.pushTransient(it, comp, 3000L) }
                         Command.SINGLE_SUCCESS
                     })
             ).build()
@@ -495,6 +495,11 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
         // /mail <read|clear|send>
         val mailNode = Commands.literal("mail")
             .requires { it.sender.hasPermission("obsidian.command.mail") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                mailService.openMailGui(player, 1)
+                Command.SINGLE_SUCCESS
+            }
             .then(
                 Commands.literal("read")
                     .requires {
@@ -504,25 +509,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                     .executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val entries = mailService.readMail(player.uniqueId)
-                        if (entries.isEmpty()) {
-                            context.locale.send(player, "chat.mail-empty")
-                        } else {
-                            context.locale.send(player, "chat.mail-header", "count" to entries.size)
-                            for (entry in entries) {
-                                val badge = context.locale.raw(
-                                    if (entry.read) "chat.mail-badge-read" else "chat.mail-badge-new"
-                                )
-                                context.locale.sendRaw(
-                                    player,
-                                    "chat.mail-entry",
-                                    "badge" to badge,
-                                    "sender" to entry.sender,
-                                    "time" to mailService.formatTimestamp(entry.timestamp),
-                                    "message" to entry.message,
-                                )
-                            }
-                        }
+                        mailService.openMailGui(player, 1)
                         Command.SINGLE_SUCCESS
                     })
             .then(

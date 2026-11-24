@@ -11,9 +11,12 @@ import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
+import obsidian.core.gui.MenuItems
+import obsidian.core.gui.MenuWindow
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.TextFormatter
 import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.bukkit.event.Listener
@@ -187,6 +190,10 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
                         context.locale.send(sender, "automation.mobreport-empty")
                         return@awaitOrDispatch
                     }
+                    if (sender is Player) {
+                        openDenseChunksGui(sender, list, world.name)
+                        return@awaitOrDispatch
+                    }
                     context.locale.send(sender, "automation.mobreport-header", "world" to world.name)
                     for (chunk in list) {
                         val blockX = chunk.chunkX * 16 + 8
@@ -318,6 +325,10 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
                 context.locale.send(sender, "mobfarm.list-empty")
                 return@awaitOrDispatch
             }
+            if (sender is Player) {
+                openDenseChunksGui(sender, list, sender.world.name)
+                return@awaitOrDispatch
+            }
 
             context.locale.send(sender, "mobfarm.list-header")
             list.forEachIndexed { idx, info ->
@@ -380,37 +391,117 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
 
         val future = cleanerService.inspectLimitsAsync(player.location)
         awaitOrDispatch(sender, future) { report ->
-            context.locale.send(
-                player,
-                "mobfarm.limits-header",
-                "range" to report.rangeChunksWidth,
-                "chunks" to report.totalChunks,
-            )
-
             if (report.groupLimits.isEmpty() && report.typeLimits.isEmpty()) {
                 context.locale.send(player, "mobfarm.limits-empty")
                 return@awaitOrDispatch
             }
+            openLimitsGui(player, report, showFull)
+        }
+    }
 
-            if (report.groupLimits.isNotEmpty()) {
-                context.locale.sendRaw(player, "mobfarm.limits-groups")
-                val formatted = report.groupLimits.joinToString("  ") { formatLimitEntry(it, showFull) }
-                player.sendMessage(TextFormatter.format(" $formatted"))
+    private fun openDenseChunksGui(player: Player, list: List<DenseChunkInfo>, worldHint: String) {
+        val window = MenuWindow(context.locale.component("mobfarm.gui-dense-title", mapOf("world" to worldHint)), 5)
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        var slot = 10
+        list.take(21).forEachIndexed { idx, info ->
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) return@forEachIndexed
+            val bx = info.chunkX * 16 + 8
+            val bz = info.chunkZ * 16 + 8
+            val topTypes = info.typeCounts.entries.sortedByDescending { it.value }.take(4)
+                .joinToString(", ") { "${it.key.lowercase()}:${it.value}" }
+            val lore = buildList {
+                add(context.locale.raw("general.gui-world", "world" to info.worldName))
+                add(
+                    context.locale.raw(
+                        "mobfarm.gui-dense-coords",
+                        "cx" to info.chunkX,
+                        "cz" to info.chunkZ,
+                        "x" to bx,
+                        "z" to bz
+                    )
+                )
+                add(
+                    context.locale.raw(
+                        "mobfarm.gui-dense-counts",
+                        "total" to info.totalCount,
+                        "monsters" to info.monsterCount,
+                        "animals" to info.animalCount
+                    )
+                )
+                if (topTypes.isNotBlank()) add("<gray>$topTypes</gray>")
+                add("")
+                add(context.locale.raw("mobfarm.gui-dense-tp"))
+                add(context.locale.raw("mobfarm.gui-dense-clean"))
             }
-
-            if (report.typeLimits.isNotEmpty()) {
-                context.locale.sendRaw(player, "mobfarm.limits-types")
-                report.typeLimits.chunked(2).forEach { pair ->
-                    val row = pair.joinToString("    ") { entry ->
-                        val niceName = entry.key.lowercase().split('_').joinToString(" ") { p ->
-                            p.replaceFirstChar { c -> c.uppercase() }
+            val mat = when {
+                info.totalCount >= 50 -> Material.RED_CONCRETE
+                info.totalCount >= 25 -> Material.YELLOW_CONCRETE
+                else -> Material.LIME_CONCRETE
+            }
+            window.set(
+                slot++,
+                MenuItems.item(mat, "<gold>#${idx + 1}</gold> <white>${info.totalCount} entities</white>", lore),
+            ) { click ->
+                val world = Bukkit.getWorld(info.worldName) ?: return@set
+                if (click.clickType.isShiftClick && click.clickType.isRightClick) {
+                    val centerLoc = org.bukkit.Location(world, bx.toDouble(), 64.0, bz.toDouble())
+                    context.scheduler.runAtLocation(centerLoc) {
+                        val chunk = world.getChunkAt(info.chunkX, info.chunkZ)
+                        val removed = cleanerService.cleanSingleChunkSync(chunk, CleanMode.MANUAL)
+                        context.scheduler.runForEntity(click.player) {
+                            context.actionBar.pushTransientLocale(
+                                click.player,
+                                "automation.mobclean-done",
+                                "count" to removed
+                            )
+                            click.player.closeInventory()
                         }
-                        formatLimitEntry(entry.copy(key = niceName), showFull)
                     }
-                    player.sendMessage(TextFormatter.format(" $row"))
+                } else {
+                    click.player.closeInventory()
+                    val y = world.getHighestBlockYAt(bx, bz).toDouble() + 1.0
+                    click.player.teleportAsync(org.bukkit.Location(world, bx.toDouble(), y, bz.toDouble()))
                 }
             }
         }
+        window.open(player)
+    }
+
+    private fun openLimitsGui(player: Player, report: LimitsReport, showFull: Boolean) {
+        val window = MenuWindow(
+            context.locale.component("mobfarm.gui-limits-title", mapOf("chunks" to report.totalChunks.toString())),
+            5,
+        )
+        window.fillBorder(MenuItems.item(Material.GRAY_STAINED_GLASS_PANE, " "))
+        val combined = buildList {
+            report.groupLimits.forEach { add(true to it) }
+            report.typeLimits.forEach { add(false to it) }
+        }
+        var slot = 10
+        for ((isGroup, entry) in combined) {
+            while (slot % 9 == 0 || slot % 9 == 8) slot++
+            if (slot >= 35) break
+            val ratio = if (entry.max > 0) entry.count.toDouble() / entry.max.toDouble() else 0.0
+            val mat = when {
+                isGroup -> Material.CHEST
+                ratio >= 0.9 -> Material.REDSTONE_BLOCK
+                ratio >= 0.6 -> Material.GOLD_BLOCK
+                else -> Material.EMERALD_BLOCK
+            }
+            val color = when {
+                ratio >= 0.9 -> "<red>"
+                ratio >= 0.6 -> "<yellow>"
+                else -> "<green>"
+            }
+            val label = if (isGroup) "<aqua>[Group] ${entry.key}</aqua>" else "<white>${entry.key.lowercase()}</white>"
+            val lore = buildList {
+                add("$color${entry.count} / ${entry.max}</color>")
+                if (showFull) add("<gray>${(ratio * 100).toInt()}% capacity</gray>")
+            }
+            window.set(slot++, MenuItems.item(mat, label, lore))
+        }
+        window.open(player)
     }
 
     private fun handleHoppers(sender: CommandSender, args: List<String>) {

@@ -5,6 +5,8 @@ import obsidian.core.config.ObsidianConfig
 import obsidian.core.locale.LocaleService
 import obsidian.core.scheduler.ObsidianScheduler
 import obsidian.core.text.TextFormatter
+import obsidian.core.ui.ActionBarPriority
+import obsidian.core.ui.ActionBarService
 import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
@@ -22,6 +24,7 @@ class WarmupService(
     private val config: ObsidianConfig,
     private val locale: LocaleService,
     private val scheduler: ObsidianScheduler,
+    private val actionBar: ActionBarService? = null,
 ) : Listener {
 
     private data class ActiveWarmup(
@@ -94,11 +97,22 @@ class WarmupService(
             if (remaining <= 0) {
                 scheduled.cancel()
                 active.remove(player.uniqueId)
+                actionBar?.clearState(player.uniqueId, WARMUP_STATE_KEY)
                 action()
                 return@runForEntityTimer
             }
             if (showActionBar) {
-                locale.sendActionBar(player, "general.warmup-actionbar", "seconds" to remaining)
+                if (actionBar != null) {
+                    actionBar.setLocaleState(
+                        player,
+                        WARMUP_STATE_KEY,
+                        ActionBarPriority.WARMUP,
+                        "general.warmup-actionbar",
+                        "seconds" to remaining,
+                    )
+                } else {
+                    locale.sendActionBar(player, "general.warmup-actionbar", "seconds" to remaining)
+                }
             }
             remaining -= 1
             current.remainingSeconds = remaining
@@ -114,6 +128,7 @@ class WarmupService(
     fun cancel(uuid: UUID, notify: Boolean = true) {
         val removed = active.remove(uuid) ?: return
         removed.task.cancel()
+        actionBar?.clearState(uuid, WARMUP_STATE_KEY)
         if (notify) {
             org.bukkit.Bukkit.getPlayer(uuid)?.let { player ->
                 locale.send(player, "general.warmup-cancelled")
@@ -135,5 +150,9 @@ class WarmupService(
     @EventHandler(priority = EventPriority.MONITOR)
     fun onQuit(event: PlayerQuitEvent) {
         cancel(event.player.uniqueId, notify = false)
+    }
+
+    companion object {
+        private const val WARMUP_STATE_KEY = "warmup"
     }
 }

@@ -1,11 +1,13 @@
 package obsidian.modules.home
 
+import io.papermc.paper.registry.data.dialog.input.DialogInput
 import kotlinx.coroutines.launch
 import obsidian.core.ObsidianContext
 import obsidian.core.database.HomeRecord
 import obsidian.core.database.StoredLocation
 import obsidian.core.gui.MenuItems
 import obsidian.core.gui.MenuWindow
+import obsidian.core.ui.DialogBuilder
 import obsidian.modules.teleport.TeleportService
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -119,6 +121,7 @@ class HomeService(
             teleportService.teleport(player, loc, TeleportCause.COMMAND).thenAccept { ok ->
                 if (ok) {
                     context.locale.send(player, "home.teleported", "home" to record.name)
+                    context.actionBar.pushTransientLocale(player, "home.actionbar-teleported", "home" to record.name)
                 } else {
                     context.locale.send(player, "teleport.unsafe-location")
                 }
@@ -168,7 +171,30 @@ class HomeService(
                 )
                 window.set(slot, item) { click ->
                     if (click.clickType.isShiftClick && click.clickType.isRightClick) {
-                        if (deleteHome(player, home.name)) {
+                        click.player.closeInventory()
+                        if (DialogBuilder.shouldAutoPopup(context, click.player)) {
+                            DialogBuilder.confirm(
+                                context = context,
+                                player = click.player,
+                                title = context.locale.component("home.delete-dialog-title"),
+                                bodyLines = listOf(
+                                    context.locale.component(
+                                        "home.delete-dialog-body",
+                                        mapOf("home" to home.name)
+                                    )
+                                ),
+                                confirmLabel = context.locale.component("general.dialog-confirm"),
+                                cancelLabel = context.locale.component("general.dialog-cancel"),
+                                onConfirm = { p ->
+                                    if (deleteHome(p, home.name)) {
+                                        context.locale.send(p, "home.removed", "home" to home.name)
+                                        context.actionBar.pushTransientLocale(p, "home.removed", "home" to home.name)
+                                    }
+                                    openHomesGui(p, currentPage)
+                                },
+                                onCancel = { p -> openHomesGui(p, currentPage) },
+                            )
+                        } else if (deleteHome(player, home.name)) {
                             context.locale.send(player, "home.removed", "home" to home.name)
                             openHomesGui(player, currentPage)
                         }
@@ -180,17 +206,74 @@ class HomeService(
             }
         }
 
-        if (currentPage > 1) {
-            window.set(48, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-prev-page"))) {
-                openHomesGui(player, currentPage - 1)
-            }
+        window.set(
+            49,
+            MenuItems.item(
+                Material.EMERALD,
+                context.locale.raw("home.gui-create-name"),
+                listOf(context.locale.raw("home.gui-create-lore")),
+            ),
+        ) { click ->
+            click.player.closeInventory()
+            openCreateHomeDialog(click.player)
         }
-        if (currentPage < totalPages) {
-            window.set(50, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-next-page"))) {
-                openHomesGui(player, currentPage + 1)
-            }
-        }
+
+        window.setFooterNav(
+            context = context,
+            page = currentPage,
+            totalPages = totalPages,
+            onPrev = { openHomesGui(player, currentPage - 1) },
+            onNext = { openHomesGui(player, currentPage + 1) },
+        )
         window.open(player)
+    }
+
+    fun openCreateHomeDialog(player: Player) {
+        DialogBuilder.form(
+            context = context,
+            player = player,
+            title = context.locale.component("home.create-dialog-title"),
+            inputs = listOf(
+                DialogInput.text("name", context.locale.component("home.create-dialog-label"))
+                    .initial(defaultHomeName)
+                    .width(200)
+                    .build(),
+            ),
+            submitLabel = context.locale.component("general.dialog-confirm"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+        ) { p, response ->
+            val rawName = response.getText("name")?.trim()?.takeIf { it.isNotEmpty() } ?: defaultHomeName
+            when (val res = setHome(p, rawName, overrideExisting = false)) {
+                is SetHomeResult.Saved -> {
+                    context.locale.send(p, "home.set", "home" to res.name)
+                    context.actionBar.pushTransientLocale(p, "home.set", "home" to res.name)
+                }
+
+                is SetHomeResult.ConfirmOverride -> openOverrideConfirmDialog(p, res.name)
+                is SetHomeResult.LimitReached -> context.locale.send(
+                    p, "home.limit-reached", "current" to res.current, "max" to res.max
+                )
+
+                SetHomeResult.InvalidLocation -> context.locale.send(p, "teleport.unsafe-location")
+            }
+        }
+    }
+
+    fun openOverrideConfirmDialog(player: Player, homeName: String) {
+        DialogBuilder.confirm(
+            context = context,
+            player = player,
+            title = context.locale.component("home.override-dialog-title"),
+            bodyLines = listOf(context.locale.component("home.override-dialog-body", mapOf("home" to homeName))),
+            confirmLabel = context.locale.component("general.dialog-confirm"),
+            cancelLabel = context.locale.component("general.dialog-cancel"),
+            onConfirm = { p ->
+                if (setHome(p, homeName, overrideExisting = true) is SetHomeResult.Saved) {
+                    context.locale.send(p, "home.set", "home" to homeName)
+                    context.actionBar.pushTransientLocale(p, "home.set", "home" to homeName)
+                }
+            },
+        )
     }
 
     @EventHandler(priority = EventPriority.LOW)
