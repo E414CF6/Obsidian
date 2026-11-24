@@ -211,12 +211,14 @@ class StatsAggregatorService(
         val economyTable = db.table("economy")
         val playtimeTable = db.table("playtime")
         val chatTable = db.table("chat_profiles")
+        val votesTable = db.table("votes")
 
         val userRows = LinkedHashMap<UUID, UserRow>()
         val balances = HashMap<UUID, Double>()
         val economyNames = HashMap<UUID, String>()
         val playtimes = HashMap<UUID, PlayTimeRow>()
         val nicknames = HashMap<UUID, String>()
+        val voteCounts = HashMap<UUID, Long>()
         val dailyHistoryByUuid = HashMap<UUID, MutableList<PlaytimeDayRecord>>()
 
         db.querySync { conn ->
@@ -224,6 +226,7 @@ class StatsAggregatorService(
             loadBalances(conn, economyTable, balances, economyNames)
             loadPlaytimes(conn, playtimeTable, playtimes)
             loadNicknames(conn, chatTable, nicknames)
+            loadVotes(conn, votesTable, voteCounts)
             loadDailyHistory(conn, dailyHistoryByUuid)
         }
 
@@ -319,7 +322,7 @@ class StatsAggregatorService(
                 lastLoginTime = lastLogin,
                 lastLogoffTime = lastLogout,
                 isOnline = isOnline,
-                votes = 0L,
+                votes = voteCounts[uuid] ?: 0L,
                 powerLevel = powerLevel,
                 skills = skills,
                 specialty = specialty,
@@ -447,6 +450,19 @@ class StatsAggregatorService(
                 }
             }
         }.onFailure { logger?.fine("Stats loadNicknames skipped: ${it.message}") }
+    }
+
+    private fun loadVotes(conn: Connection, table: String, out: MutableMap<UUID, Long>) {
+        runCatching {
+            conn.prepareStatement("SELECT `uuid`, `vote_count` FROM `$table`;").use { ps ->
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) {
+                        val uuid = runCatching { UUID.fromString(rs.getString("uuid")) }.getOrNull() ?: continue
+                        out[uuid] = rs.getLong("vote_count").coerceAtLeast(0L)
+                    }
+                }
+            }
+        }.onFailure { logger?.fine("Stats loadVotes skipped: ${it.message}") }
     }
 
     private fun loadDailyHistory(conn: Connection, out: MutableMap<UUID, MutableList<PlaytimeDayRecord>>) {

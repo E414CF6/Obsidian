@@ -50,6 +50,7 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
     private val autoRechargeKey = NamespacedKey(context.plugin, "obsidian_auto_recharge")
     private val hpBarOptKey = NamespacedKey(context.plugin, "obsidian_opt_hpbar")
     private val elytraOptKey = NamespacedKey(context.plugin, "obsidian_opt_elytra")
+    private val chatBubbleOptKey = NamespacedKey(context.plugin, "obsidian_opt_chatbubble")
 
     // Value: epoch millis when it expires, or UNTIL_RELOG (-1L)
     private val tempFlyExpiry = ConcurrentHashMap<UUID, Long>()
@@ -189,6 +190,15 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
         player.persistentDataContainer.set(elytraOptKey, PersistentDataType.BYTE, if (enabled) 1 else 0)
     }
 
+    fun isChatBubbleEnabled(player: Player): Boolean {
+        val raw = player.persistentDataContainer.get(chatBubbleOptKey, PersistentDataType.BYTE)
+        return raw == null || raw == 1.toByte()
+    }
+
+    fun setChatBubbleEnabled(player: Player, enabled: Boolean) {
+        player.persistentDataContainer.set(chatBubbleOptKey, PersistentDataType.BYTE, if (enabled) 1 else 0)
+    }
+
     fun openOptionsGui(player: Player) {
         val window = MenuWindow(context.locale.component("utility.options-title"), 3)
         val filler = ItemStack(Material.GRAY_STAINED_GLASS_PANE).apply {
@@ -236,6 +246,17 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
             toggleItem(Material.FEATHER, context.locale.raw("utility.options-auto-recharge"), isAutoRecharge(player))
         ) {
             setAutoRecharge(player, !isAutoRecharge(player))
+            openOptionsGui(player)
+        }
+        window.set(
+            15,
+            toggleItem(
+                Material.OAK_SIGN,
+                context.locale.raw("utility.options-chat-bubble"),
+                isChatBubbleEnabled(player)
+            )
+        ) {
+            setChatBubbleEnabled(player, !isChatBubbleEnabled(player))
             openOptionsGui(player)
         }
         window.set(16, toggleItem(Material.PAPER, "Toggle Private Messages", true)) {

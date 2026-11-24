@@ -86,6 +86,7 @@ class ObsidianPlugin : JavaPlugin() {
         ctx.modules.register(mobFarmModule)
 
         ctx.modules.enableAll()
+        ctx.mapMarkers.registerAndSync()
 
         if (placeholderService.isPapiEnabled()) {
             papiHook = PlaceholderApiHook(ctx, placeholderService).also {

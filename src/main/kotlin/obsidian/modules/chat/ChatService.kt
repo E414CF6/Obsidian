@@ -3,9 +3,12 @@ package obsidian.modules.chat
 import io.papermc.paper.chat.ChatRenderer
 import io.papermc.paper.event.player.AsyncChatEvent
 import kotlinx.coroutines.launch
+import net.kyori.adventure.chat.SignedMessage
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.TextReplacementConfig
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
+import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import obsidian.core.ObsidianContext
 import obsidian.core.database.ChatProfileRecord
@@ -23,9 +26,13 @@ import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.inventory.ItemStack
 import java.io.File
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.atomic.AtomicLong
+import java.util.regex.Pattern
 
 /**
  * Manages Paper [AsyncChatEvent] formatting, nicknames, `/msg` & `/reply`, `/socialspy`,
@@ -38,12 +45,25 @@ class ChatService(
 
     private val profiles = ConcurrentHashMap<UUID, ChatProfileRecord>()
     private val lastMessagedBy = ConcurrentHashMap<UUID, UUID>()
+    private val lastChatAt = ConcurrentHashMap<UUID, Long>()
+    private val signedMessages = ConcurrentHashMap<String, SignedMessage>()
+    private val signedMessageOrder = ConcurrentLinkedDeque<String>()
+    private val messageIdCounter = AtomicLong(1L)
     private val ignoreFile = File(context.plugin.dataFolder, "ignores.yml")
     private val ignoredPlayers = ConcurrentHashMap<UUID, MutableSet<UUID>>()
     private val mentionRegex = Regex("@([A-Za-z0-9_]{3,16})")
 
     @Volatile
     var globalChatMuted: Boolean = false
+
+    @Volatile
+    var slowmodeSeconds: Int = 0
+
+    @Volatile
+    var deleteButtonForStaff: Boolean = true
+        private set
+
+    var chatBubbleService: ChatBubbleService? = null
 
     var chatFormat: String =
         "<gray>[<aqua>{rank}</aqua>]</gray> {prefix}<white>{displayname}</white>{suffix} <dark_gray>»</dark_gray> <gray>{message}</gray>"
@@ -81,6 +101,7 @@ class ChatService(
         staffChatFormat = raw.getString("chat.staffchat-format", staffChatFormat) ?: staffChatFormat
         helpopFormat = raw.getString("chat.helpop-format", helpopFormat) ?: helpopFormat
         broadcastFormat = raw.getString("chat.broadcast-format", broadcastFormat) ?: broadcastFormat
+        deleteButtonForStaff = raw.getBoolean("chat.delete-button-for-staff", true)
         loadIgnores()
     }
 
@@ -168,6 +189,35 @@ class ChatService(
         profiles[player.uniqueId] = updated
         persistAsync(updated)
         return next
+    }
+
+    fun toggleSilence(player: Player): Boolean {
+        val cur = getProfile(player.uniqueId)
+        val next = !cur.silenceChat
+        val updated = cur.copy(silenceChat = next, updatedAt = System.currentTimeMillis())
+        profiles[player.uniqueId] = updated
+        persistAsync(updated)
+        return next
+    }
+
+    fun isSilenced(uuid: UUID): Boolean = profiles[uuid]?.silenceChat == true
+
+    fun getChatColor(uuid: UUID): String? = profiles[uuid]?.chatColor?.takeIf { it.isNotBlank() }
+
+    fun setChatColor(uuid: UUID, rawColor: String?): String? {
+        val normalized = normalizeChatColorTag(rawColor)
+        val cur = getProfile(uuid)
+        val updated = cur.copy(chatColor = normalized, updatedAt = System.currentTimeMillis())
+        profiles[uuid] = updated
+        persistAsync(updated)
+        return normalized
+    }
+
+    fun deleteRecordedMessage(id: String): Boolean {
+        val signed = signedMessages.remove(id.lowercase()) ?: return false
+        if (!signed.canDelete()) return false
+        Bukkit.getServer().deleteMessage(signed)
+        return true
     }
 
     fun getReplyTarget(senderUuid: UUID): Player? {
@@ -258,6 +308,23 @@ class ChatService(
             return
         }
 
+        val slowSec = slowmodeSeconds
+        if (slowSec > 0 && !player.hasPermission("obsidian.chat.slowmode.bypass") && !player.hasPermission("obsidian.admin")) {
+            val now = System.currentTimeMillis()
+            val prev = lastChatAt[player.uniqueId] ?: 0L
+            val remainingMs = prev + slowSec * 1000L - now
+            if (remainingMs > 0L) {
+                event.isCancelled = true
+                context.locale.send(
+                    player,
+                    "chat.slowmode-active",
+                    "time" to TextFormatter.formatDuration(remainingMs),
+                )
+                return
+            }
+            lastChatAt[player.uniqueId] = now
+        }
+
         val mute = mod?.getActiveMute(player.uniqueId)
         if (mute != null) {
             if (mute.type == PunishmentType.SHADOW_MUTE) {
@@ -289,10 +356,15 @@ class ChatService(
         val canColor = player.hasPermission("obsidian.chat.color") || player.hasPermission("obsidian.admin")
         var displayText = filteredText
 
-        // Remove viewers who ignore the sender (unless shadow-muted already filtered)
+        // Remove viewers who ignore the sender or have silenced public chat (unless shadow-muted already filtered)
         if (!player.hasPermission("obsidian.ignore.bypass") && !player.hasPermission("obsidian.admin")) {
             event.viewers().removeIf { viewer ->
-                viewer is Player && viewer.uniqueId != player.uniqueId && isIgnoring(viewer.uniqueId, player.uniqueId)
+                viewer is Player && viewer.uniqueId != player.uniqueId &&
+                        (isIgnoring(viewer.uniqueId, player.uniqueId) || isSilenced(viewer.uniqueId))
+            }
+        } else {
+            event.viewers().removeIf { viewer ->
+                viewer is Player && viewer.uniqueId != player.uniqueId && isSilenced(viewer.uniqueId)
             }
         }
 
@@ -324,7 +396,21 @@ class ChatService(
             }
         }
 
-        val messageComp = if (canColor) TextFormatter.format(displayText) else Component.text(displayText)
+        val playerColor = getChatColor(player.uniqueId).orEmpty()
+        var messageComp = when {
+            canColor -> TextFormatter.format("$playerColor$displayText")
+            playerColor.isNotEmpty() -> {
+                val escaped = MiniMessage.miniMessage().escapeTags(displayText)
+                TextFormatter.format("$playerColor$escaped")
+            }
+
+            else -> Component.text(displayText)
+        }
+
+        if (player.hasPermission("obsidian.chat.item") || player.hasPermission("obsidian.admin")) {
+            messageComp = replaceItemShowcase(player, messageComp)
+        }
+
         val placeholders = context.getService<PlaceholderService>()
 
         val hoverComp = if (hoverLines.isNotEmpty()) {
@@ -344,10 +430,89 @@ class ChatService(
             renderedPrefix = renderedPrefix.hoverEvent(HoverEvent.showText(hoverComp))
         }
         val renderedSuffix = if (suffixPart.isEmpty()) Component.empty() else TextFormatter.format(suffixPart)
+        val baseLine = Component.empty().append(renderedPrefix).append(messageComp).append(renderedSuffix)
 
-        event.renderer(ChatRenderer.viewerUnaware { _, _, _ ->
-            Component.empty().append(renderedPrefix).append(messageComp).append(renderedSuffix)
-        })
+        val signedMsg = event.signedMessage()
+        val msgId = if (signedMsg.canDelete()) recordSignedMessage(signedMsg) else null
+
+        if (msgId != null && deleteButtonForStaff) {
+            val staffDeleteButton = TextFormatter.format("<dark_gray>[<red>✕</red>]</dark_gray> ")
+                .hoverEvent(HoverEvent.showText(context.locale.component("chat.delete-hover")))
+                .clickEvent(ClickEvent.runCommand("/chatdelete $msgId"))
+            event.renderer(ChatRenderer { _, _, _, viewer ->
+                val p = viewer as? Player
+                if (p != null && (p.hasPermission("obsidian.chat.delete") || p.hasPermission("obsidian.admin"))) {
+                    staffDeleteButton.append(baseLine)
+                } else {
+                    baseLine
+                }
+            })
+        } else {
+            event.renderer(ChatRenderer.viewerUnaware { _, _, _ -> baseLine })
+        }
+
+        if (mute == null || mute.type != PunishmentType.SHADOW_MUTE) {
+            chatBubbleService?.showBubble(
+                player,
+                messageComp,
+                PlainTextComponentSerializer.plainText().serialize(messageComp).length
+            )
+        }
+    }
+
+    private fun recordSignedMessage(msg: SignedMessage): String {
+        val id = java.lang.Long.toHexString(messageIdCounter.getAndIncrement())
+        signedMessages[id] = msg
+        signedMessageOrder.addLast(id)
+        while (signedMessageOrder.size > 250) {
+            val old = signedMessageOrder.pollFirst() ?: break
+            signedMessages.remove(old)
+        }
+        return id
+    }
+
+    private fun replaceItemShowcase(player: Player, component: Component): Component {
+        val cfg = TextReplacementConfig.builder()
+            .match(ITEM_PLACEHOLDER_PATTERN)
+            .replacement { matchResult, _ ->
+                val slot = matchResult.group(1)?.lowercase()
+                val item = resolveShowcaseItem(player, slot)
+                if (item == null || item.type.isAir) {
+                    Component.text(matchResult.group(0))
+                } else {
+                    buildItemShowcaseComponent(item)
+                }
+            }
+            .build()
+        return component.replaceText(cfg)
+    }
+
+    private fun resolveShowcaseItem(player: Player, slot: String?): ItemStack {
+        val inv = player.inventory
+        return when (slot) {
+            null, "", "hand", "mainhand" -> inv.itemInMainHand
+            "offhand" -> inv.itemInOffHand
+            "helmet", "head" -> inv.helmet
+            "chestplate", "chest" -> inv.chestplate
+            "leggings", "legs" -> inv.leggings
+            "boots", "feet" -> inv.boots
+            else -> inv.itemInMainHand
+        }.clone()
+    }
+
+    private fun buildItemShowcaseComponent(item: ItemStack): Component {
+        val meta = item.itemMeta
+        val itemName = if (meta != null && meta.hasDisplayName()) {
+            meta.displayName()!!
+        } else {
+            Component.translatable(item.translationKey())
+        }
+        val countSuffix = if (item.amount > 1) Component.text(" x${item.amount}") else Component.empty()
+        return TextFormatter.format("<dark_gray>[<aqua>")
+            .append(itemName)
+            .append(countSuffix)
+            .append(TextFormatter.format("</aqua>]</dark_gray>"))
+            .hoverEvent(item.asHoverEvent())
     }
 
     @EventHandler(priority = EventPriority.LOW)
@@ -367,11 +532,34 @@ class ChatService(
     fun onQuit(event: PlayerQuitEvent) {
         profiles.remove(event.player.uniqueId)
         lastMessagedBy.remove(event.player.uniqueId)
+        lastChatAt.remove(event.player.uniqueId)
     }
 
     private fun persistAsync(record: ChatProfileRecord) {
         context.scheduler.asyncScope.launch {
             context.chatProfileRepository.upsert(record)
+        }
+    }
+
+    companion object {
+        private val ITEM_PLACEHOLDER_PATTERN: Pattern =
+            Pattern.compile(
+                "\\[item(?::(hand|mainhand|offhand|helmet|head|chestplate|chest|leggings|legs|boots|feet))?\\]",
+                Pattern.CASE_INSENSITIVE
+            )
+
+        fun normalizeChatColorTag(raw: String?): String? {
+            val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            if (trimmed.equals("reset", ignoreCase = true) || trimmed.equals(
+                    "off",
+                    ignoreCase = true
+                ) || trimmed.equals("clear", ignoreCase = true)
+            ) {
+                return null
+            }
+            if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed
+            val clean = trimmed.removePrefix("<").removeSuffix(">")
+            return "<$clean>"
         }
     }
 }

@@ -8,6 +8,8 @@ import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSele
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.command.SpecializedCommandExecutor
+import obsidian.core.database.DatabaseBackupAndMigrationService
+import obsidian.core.database.DatabaseDialect
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.TextFormatter
 import obsidian.integration.DiscordWebhookService
@@ -36,6 +38,8 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
     val discordService = DiscordWebhookService(context)
     val luckPermsHook = LuckPermsHook()
     val aliasAndCostService = AliasAndCostService(context)
+    val consoleFilterService = ConsoleFilterService(context)
+    val dbToolsService = DatabaseBackupAndMigrationService(context)
 
     override fun onEnable() {
         context.registerService(scheduleService)
@@ -44,9 +48,13 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         context.registerService(discordService)
         context.registerService(luckPermsHook)
         context.registerService(aliasAndCostService)
+        context.registerService(consoleFilterService)
+        context.registerService(dbToolsService)
+        consoleFilterService.start()
     }
 
     override fun onDisable() {
+        consoleFilterService.shutdown()
         scheduleService.shutdown()
         afkService.shutdown()
     }
@@ -57,6 +65,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         afkService.reload()
         discordService.reload()
         aliasAndCostService.reload()
+        consoleFilterService.reload()
     }
 
     override fun listeners(): List<Listener> = listOf(
@@ -72,6 +81,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
         registerCleanupCommands(registrar)
         registerConditionalAndPermCommands(registrar)
         registerAliasEditor(registrar)
+        registerTier4DatabaseCommands(registrar)
     }
 
     private fun registerScheduleCommands(registrar: Commands) {
@@ -403,6 +413,147 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             node,
             "Manage custom command aliases",
             listOf("alias"),
+        )
+    }
+
+    private fun registerTier4DatabaseCommands(registrar: Commands) {
+        // /database <stats|backup>
+        val databaseNode = Commands.literal("database")
+            .requires { it.sender.hasPermission("obsidian.command.database") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("stats").executes { ctx ->
+                    val sender = ctx.source.sender
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = { dbToolsService.collectStats() },
+                        onResult = { stats ->
+                            val total = stats.values.sum()
+                            context.locale.sendRaw(
+                                sender,
+                                "automation.database-stats-header",
+                                "dialect" to context.database.dialect.name,
+                                "total" to total,
+                            )
+                            val summary = stats.entries.joinToString(", ") { "${it.key}=${it.value}" }
+                            context.locale.sendRaw(sender, "automation.database-stats-body", "tables" to summary)
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).then(
+                Commands.literal("backup").executes { ctx ->
+                    val sender = ctx.source.sender
+                    context.locale.send(sender, "automation.database-backup-start")
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = { dbToolsService.createBackup() },
+                        onResult = { file ->
+                            context.locale.send(
+                                sender,
+                                "automation.database-backup-done",
+                                "file" to file.name,
+                                "bytes" to file.length(),
+                            )
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            databaseNode,
+            "Inspect database stats or create a backup",
+            emptyList()
+        )
+
+        // /migratedatabase <sqlite|mysql|mariadb>
+        val migrateNode = Commands.literal("migratedatabase")
+            .requires { it.sender.hasPermission("obsidian.command.migratedatabase") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("dialect", StringArgumentType.word()).suggests { _, b ->
+                    listOf("sqlite", "mysql", "mariadb").filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val raw = StringArgumentType.getString(ctx, "dialect")
+                    val target = when (raw.lowercase()) {
+                        "sqlite" -> DatabaseDialect.SQLITE
+                        "mysql" -> DatabaseDialect.MYSQL
+                        "mariadb" -> DatabaseDialect.MARIADB
+                        else -> {
+                            context.locale.send(sender, "automation.migrate-invalid-dialect", "dialect" to raw)
+                            return@executes 0
+                        }
+                    }
+                    if (target == context.database.dialect) {
+                        context.locale.send(sender, "automation.migrate-same-dialect", "dialect" to target.name)
+                        return@executes 0
+                    }
+                    context.locale.send(sender, "automation.migrate-start", "dialect" to target.name)
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = { dbToolsService.migrateTo(target) },
+                        onResult = { report ->
+                            context.locale.send(
+                                sender,
+                                "automation.migrate-done",
+                                "tables" to report.tablesCopied,
+                                "rows" to report.rowsCopied,
+                                "dialect" to report.targetDialect.name,
+                            )
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            migrateNode,
+            "Copy Obsidian database records to another configured backend",
+            emptyList()
+        )
+
+        // /importfrom <essentials|cmi>
+        val importNode = Commands.literal("importfrom")
+            .requires { it.sender.hasPermission("obsidian.command.importfrom") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("source", StringArgumentType.word()).suggests { _, b ->
+                    listOf("essentials", "cmi").filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val source = StringArgumentType.getString(ctx, "source").lowercase()
+                    if (source != "essentials" && source != "essentialsx" && source != "cmi") {
+                        context.locale.send(sender, "automation.import-invalid-source", "source" to source)
+                        return@executes 0
+                    }
+                    context.locale.send(sender, "automation.import-start", "source" to source)
+                    CommandHelper.dispatchAsync(
+                        context,
+                        sender,
+                        asyncWork = { dbToolsService.importFrom(source) },
+                        onResult = { report ->
+                            context.locale.send(
+                                sender,
+                                "automation.import-done",
+                                "source" to report.source,
+                                "users" to report.usersImported,
+                                "homes" to report.homesImported,
+                                "warps" to report.warpsImported,
+                            )
+                        },
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            importNode,
+            "Import player data, homes, and warps from EssentialsX or CMI",
+            emptyList()
         )
     }
 }

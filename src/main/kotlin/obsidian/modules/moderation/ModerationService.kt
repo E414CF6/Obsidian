@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import obsidian.core.ObsidianContext
 import obsidian.core.config.YamlConfigFile
 import obsidian.core.database.*
+import obsidian.core.gui.MenuWindow
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
 import obsidian.integration.DiscordWebhookService
@@ -26,15 +27,26 @@ class ModerationService(private val context: ObsidianContext) {
 
     private val jailsFile = YamlConfigFile(context.plugin, "jails.yml")
     private val jails = ConcurrentHashMap<String, StoredLocation>()
+    private val jailRadii = ConcurrentHashMap<String, Double>()
 
     val templates = PunishmentTemplateService(context)
     val policy = PunishmentPolicyService(context)
+
+    data class VanishOptions(
+        var nightVision: Boolean = true,
+        var silentChest: Boolean = true,
+        var noPickup: Boolean = true,
+        var noDamage: Boolean = true,
+        var noInteract: Boolean = false,
+        var hideJoinQuit: Boolean = true,
+    )
 
     // Active online/cached states keyed by UUID
     private val activeMutes = ConcurrentHashMap<UUID, PunishmentRecord>()
     private val activeJails = ConcurrentHashMap<UUID, PunishmentRecord>()
     private val cuffedPlayers = ConcurrentHashMap.newKeySet<UUID>()
     private val vanishedPlayers = ConcurrentHashMap.newKeySet<UUID>()
+    private val vanishOptions = ConcurrentHashMap<UUID, VanishOptions>()
 
     // Notification throttle cache: key -> lastSentMillis
     private val notificationThrottle = ConcurrentHashMap<String, Long>()
@@ -137,10 +149,16 @@ class ModerationService(private val context: ObsidianContext) {
         warnEscalations = escalations
 
         jails.clear()
+        jailRadii.clear()
         jailsFile.yaml.getConfigurationSection("jails")?.let { sec ->
             for (name in sec.getKeys(false)) {
                 val loc = StoredLocation.deserialize(sec.getString(name)) ?: continue
                 jails[name.lowercase()] = loc
+            }
+        }
+        jailsFile.yaml.getConfigurationSection("radii")?.let { sec ->
+            for (name in sec.getKeys(false)) {
+                jailRadii[name.lowercase()] = sec.getDouble(name, 8.0).coerceAtLeast(1.0)
             }
         }
     }
@@ -795,11 +813,27 @@ class ModerationService(private val context: ObsidianContext) {
 
     fun getJailLocation(name: String): StoredLocation? = jails[name.lowercase()]
 
+    fun getJailRadius(name: String): Double = jailRadii[name.lowercase()] ?: 8.0
+
+    fun setJailRadius(name: String, radius: Double): Boolean {
+        val key = name.lowercase()
+        if (!jails.containsKey(key)) return false
+        val clamped = radius.coerceIn(1.0, 256.0)
+        jailRadii[key] = clamped
+        jailsFile.yaml.set("radii.$key", clamped)
+        jailsFile.save()
+        return true
+    }
+
     fun setJail(name: String, location: Location): Boolean {
         val stored = StoredLocation.fromBukkit(location) ?: return false
         val key = name.lowercase()
         jails[key] = stored
         jailsFile.yaml.set("jails.$key", stored.serialize())
+        if (!jailRadii.containsKey(key)) {
+            jailRadii[key] = 8.0
+            jailsFile.yaml.set("radii.$key", 8.0)
+        }
         jailsFile.save()
         return true
     }
@@ -807,7 +841,9 @@ class ModerationService(private val context: ObsidianContext) {
     fun removeJail(name: String): Boolean {
         val key = name.lowercase()
         if (jails.remove(key) == null) return false
+        jailRadii.remove(key)
         jailsFile.yaml.set("jails.$key", null)
+        jailsFile.yaml.set("radii.$key", null)
         jailsFile.save()
         return true
     }
@@ -897,10 +933,41 @@ class ModerationService(private val context: ObsidianContext) {
 
     fun isVanished(uuid: UUID): Boolean = uuid in vanishedPlayers
 
+    fun getVanishOptions(uuid: UUID): VanishOptions = vanishOptions.computeIfAbsent(uuid) {
+        VanishOptions(nightVision = vanishNightVision, silentChest = vanishSilentChest)
+    }
+
+    fun setVanishFlag(player: Player, flag: String, value: Boolean): Boolean {
+        val opts = getVanishOptions(player.uniqueId)
+        when (flag.lowercase()) {
+            "nightvision", "night_vision" -> {
+                opts.nightVision = value
+                if (isVanished(player.uniqueId)) {
+                    if (value) {
+                        player.addPotionEffect(
+                            PotionEffect(PotionEffectType.NIGHT_VISION, Int.MAX_VALUE, 0, false, false, false)
+                        )
+                    } else {
+                        player.removePotionEffect(PotionEffectType.NIGHT_VISION)
+                    }
+                }
+            }
+
+            "silentchest", "silent_chest" -> opts.silentChest = value
+            "nopickup", "no_pickup" -> opts.noPickup = value
+            "nodamage", "no_damage" -> opts.noDamage = value
+            "nointeract", "no_interact" -> opts.noInteract = value
+            "hidejoinquit", "hide_join_quit" -> opts.hideJoinQuit = value
+            else -> return false
+        }
+        return true
+    }
+
     fun setVanished(player: Player, vanish: Boolean) {
+        val opts = getVanishOptions(player.uniqueId)
         if (vanish) {
             vanishedPlayers.add(player.uniqueId)
-            if (vanishNightVision) {
+            if (opts.nightVision) {
                 player.addPotionEffect(
                     PotionEffect(
                         PotionEffectType.NIGHT_VISION, Int.MAX_VALUE, 0, false, false, false
@@ -1010,6 +1077,22 @@ class ModerationService(private val context: ObsidianContext) {
             target.inventory.contents = items
         }
         return true
+    }
+
+    suspend fun buildSavedInventoryPreview(ownerUuid: UUID, ownerName: String, nameOrId: String): MenuWindow? {
+        val rec = context.savedInventoryRepository.findByNameOrId(ownerUuid, nameOrId) ?: return null
+        val bytes = Base64.getDecoder().decode(rec.payloadBase64)
+        val items = ItemStack.deserializeItemsFromBytes(bytes)
+        val title = context.locale.component(
+            "moderation.invcheck-title",
+            mapOf("player" to ownerName, "name" to rec.name),
+        )
+        val window = MenuWindow(title, 5)
+        for (i in 0 until minOf(items.size, 45)) {
+            val item = items[i]
+            window.set(i, item)
+        }
+        return window
     }
 
     // --- Info summary helper ---

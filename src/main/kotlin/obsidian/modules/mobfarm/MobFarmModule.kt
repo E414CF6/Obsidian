@@ -37,6 +37,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
     val hopperControl = HopperControlService(context, farmConfig)
     val redstoneTracker = RedstoneTrackerService { farmConfig.settings }
     val blockLimitService = BlockLimitService(context, farmConfig)
+    val spawnerChargeService = SpawnerChargeService(context)
     private val farmListener = MobFarmListener(context, farmConfig, cleanerService)
 
     override fun onEnable() {
@@ -46,6 +47,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
         context.registerService(hopperControl)
         context.registerService(redstoneTracker)
         context.registerService(blockLimitService)
+        context.registerService(spawnerChargeService)
 
         redstoneTracker.start()
         cleanerService.startOrRestartAutoClean()
@@ -60,6 +62,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
 
     override fun onReload() {
         farmConfig.reload()
+        spawnerChargeService.reload()
         cleanerService.startOrRestartAutoClean()
     }
 
@@ -68,11 +71,13 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
         hopperControl,
         redstoneTracker,
         blockLimitService,
+        spawnerChargeService,
     )
 
     override fun registerCommands(registrar: Commands) {
         registerMfmCommand(registrar)
         registerLegacyAliases(registrar)
+        registerSpawnerCommands(registrar)
     }
 
     private fun registerMfmCommand(registrar: Commands) {
@@ -572,5 +577,177 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
             else -> emptyList()
         }
         return candidates.filter { it.startsWith(last, ignoreCase = true) }
+    }
+
+    private fun registerSpawnerCommands(registrar: Commands) {
+        val chargesNode = Commands.literal("charges")
+            .requires { it.sender.hasPermission("obsidian.command.charges") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                context.locale.send(
+                    player,
+                    "mobfarm.spawner-charges-self",
+                    "charges" to spawnerChargeService.getCharges(player.uniqueId),
+                    "max" to spawnerChargeService.maxCharges,
+                )
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.literal("set")
+                    .requires { it.sender.hasPermission("obsidian.command.charges.admin") || it.sender.hasPermission("obsidian.admin") }
+                    .then(
+                        Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                            CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                            b.buildFuture()
+                        }.then(
+                            Commands.argument("amount", IntegerArgumentType.integer(0)).executes { ctx ->
+                                val targetName = StringArgumentType.getString(ctx, "target")
+                                val target = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+                                if (target == null) {
+                                    context.locale.send(
+                                        ctx.source.sender,
+                                        "general.player-not-found",
+                                        "player" to targetName
+                                    )
+                                    return@executes 0
+                                }
+                                val updated = spawnerChargeService.setCharges(
+                                    target.uniqueId,
+                                    IntegerArgumentType.getInteger(ctx, "amount")
+                                )
+                                context.locale.send(
+                                    ctx.source.sender,
+                                    "mobfarm.spawner-charges-updated",
+                                    "target" to target.name,
+                                    "charges" to updated
+                                )
+                                Command.SINGLE_SUCCESS
+                            }
+                        )
+                    )
+            )
+            .then(
+                Commands.literal("add")
+                    .requires { it.sender.hasPermission("obsidian.command.charges.admin") || it.sender.hasPermission("obsidian.admin") }
+                    .then(
+                        Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                            CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                            b.buildFuture()
+                        }.then(
+                            Commands.argument("amount", IntegerArgumentType.integer(1)).executes { ctx ->
+                                val targetName = StringArgumentType.getString(ctx, "target")
+                                val target = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+                                if (target == null) {
+                                    context.locale.send(
+                                        ctx.source.sender,
+                                        "general.player-not-found",
+                                        "player" to targetName
+                                    )
+                                    return@executes 0
+                                }
+                                val updated = spawnerChargeService.addCharges(
+                                    target.uniqueId,
+                                    IntegerArgumentType.getInteger(ctx, "amount")
+                                )
+                                context.locale.send(
+                                    ctx.source.sender,
+                                    "mobfarm.spawner-charges-updated",
+                                    "target" to target.name,
+                                    "charges" to updated
+                                )
+                                Command.SINGLE_SUCCESS
+                            }
+                        )
+                    )
+            )
+            .then(
+                Commands.literal("take")
+                    .requires { it.sender.hasPermission("obsidian.command.charges.admin") || it.sender.hasPermission("obsidian.admin") }
+                    .then(
+                        Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                            CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                            b.buildFuture()
+                        }.then(
+                            Commands.argument("amount", IntegerArgumentType.integer(1)).executes { ctx ->
+                                val targetName = StringArgumentType.getString(ctx, "target")
+                                val target = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+                                if (target == null) {
+                                    context.locale.send(
+                                        ctx.source.sender,
+                                        "general.player-not-found",
+                                        "player" to targetName
+                                    )
+                                    return@executes 0
+                                }
+                                val updated = spawnerChargeService.addCharges(
+                                    target.uniqueId,
+                                    -IntegerArgumentType.getInteger(ctx, "amount")
+                                )
+                                context.locale.send(
+                                    ctx.source.sender,
+                                    "mobfarm.spawner-charges-updated",
+                                    "target" to target.name,
+                                    "charges" to updated
+                                )
+                                Command.SINGLE_SUCCESS
+                            }
+                        )
+                    )
+            )
+            .build()
+        registrar.register(context.plugin.pluginMeta, chargesNode, "View or manage spawner mining charges", emptyList())
+
+        val spawnerEditorNode = Commands.literal("spawnereditor")
+            .requires { it.sender.hasPermission("obsidian.command.spawnereditor") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("info").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val spawner = getTargetSpawner(player) ?: return@executes 0
+                context.locale.send(
+                    player,
+                    "mobfarm.spawner-editor-info",
+                    "type" to (spawner.spawnedType?.name ?: "PIG"),
+                    "minDelay" to spawner.minSpawnDelay,
+                    "maxDelay" to spawner.maxSpawnDelay,
+                    "count" to spawner.spawnCount,
+                    "range" to spawner.spawnRange,
+                    "nearby" to spawner.maxNearbyEntities,
+                )
+                Command.SINGLE_SUCCESS
+            })
+            .then(spawnerIntSetter("delay") { s, v -> s.delay = v })
+            .then(spawnerIntSetter("min-delay") { s, v -> s.minSpawnDelay = v })
+            .then(spawnerIntSetter("max-delay") { s, v -> s.maxSpawnDelay = v })
+            .then(spawnerIntSetter("count") { s, v -> s.spawnCount = v })
+            .then(spawnerIntSetter("range") { s, v -> s.spawnRange = v })
+            .then(spawnerIntSetter("nearby") { s, v -> s.maxNearbyEntities = v })
+            .build()
+        registrar.register(context.plugin.pluginMeta, spawnerEditorNode, "Edit targeted spawner settings", emptyList())
+    }
+
+    private fun spawnerIntSetter(
+        key: String,
+        applier: (org.bukkit.block.CreatureSpawner, Int) -> Unit,
+    ): LiteralArgumentBuilder<CommandSourceStack> {
+        return Commands.literal(key).then(
+            Commands.argument("value", IntegerArgumentType.integer(1, 32767)).executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val spawner = getTargetSpawner(player) ?: return@executes 0
+                val value = IntegerArgumentType.getInteger(ctx, "value")
+                applier(spawner, value)
+                spawner.update(true, false)
+                context.locale.send(player, "mobfarm.spawner-editor-updated", "property" to key, "value" to value)
+                Command.SINGLE_SUCCESS
+            }
+        )
+    }
+
+    private fun getTargetSpawner(player: Player): org.bukkit.block.CreatureSpawner? {
+        val block = player.getTargetBlockExact(6)
+        val state = block?.state as? org.bukkit.block.CreatureSpawner
+        if (state == null) {
+            context.locale.send(player, "mobfarm.spawner-not-looking")
+            return null
+        }
+        return state
     }
 }

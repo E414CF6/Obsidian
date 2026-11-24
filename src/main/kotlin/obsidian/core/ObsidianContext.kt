@@ -13,6 +13,7 @@ import obsidian.core.locale.LocaleService
 import obsidian.core.module.ModuleRegistry
 import obsidian.core.scheduler.ObsidianScheduler
 import obsidian.core.user.UserService
+import obsidian.integration.MapMarkerService
 import org.bukkit.plugin.java.JavaPlugin
 import java.util.concurrent.ConcurrentHashMap
 
@@ -35,6 +36,11 @@ class ObsidianContext(val plugin: JavaPlugin) {
     val punishmentRepository = PunishmentRepository(database)
     val savedInventoryRepository = SavedInventoryRepository(database)
     val chatProfileRepository = ChatProfileRepository(database)
+    val voteRepository = VoteRepository(database)
+    val deliveryRepository = DeliveryRepository(database)
+    val spawnerChargeRepository = SpawnerChargeRepository(database)
+    val alertRepository = AlertRepository(database)
+    val ipLockRepository = IpLockRepository(database)
 
     val users = UserService(userRepository, scheduler, config)
     val cooldowns = CooldownService(config)
@@ -42,6 +48,7 @@ class ObsidianContext(val plugin: JavaPlugin) {
     val modules = ModuleRegistry(plugin, config)
     val commandRegistry = ObsidianCommandRegistry()
     val commandAliases = CommandAliasService(this)
+    val mapMarkers = MapMarkerService(this)
 
     private val services = ConcurrentHashMap<Class<*>, Any>()
 
@@ -80,6 +87,8 @@ class ObsidianContext(val plugin: JavaPlugin) {
         warmups.reload()
         modules.reloadAll()
         commandAliases.reload()
+        mapMarkers.reload()
+        mapMarkers.syncMarkers()
     }
 
     fun shutdown() {

@@ -24,9 +24,13 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
     override val description: String = "PlayTime tracker, ranks, and milestone rewards"
 
     val rankService = RankService(context)
+    val voteService = VoteService(context)
 
     override fun onEnable() {
         context.registerService(rankService)
+        context.registerService(voteService)
+        voteService.loadAllAsync()
+        voteService.registerVotifierHookIfPresent()
         val interval = context.config.raw.getLong("playtime.flush-interval-seconds", 30L).coerceAtLeast(5L)
         context.scheduler.runGlobalTimer(interval, interval) {
             rankService.tickAllOnline()
@@ -39,9 +43,10 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
 
     override fun onReload() {
         rankService.reload()
+        voteService.reload()
     }
 
-    override fun listeners(): List<Listener> = listOf(rankService)
+    override fun listeners(): List<Listener> = listOf(rankService, voteService)
 
     override fun registerCommands(registrar: Commands) {
         registerPlayTime(registrar)
@@ -49,6 +54,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
         registerRankUp(registrar)
         registerRankInfo(registrar)
         registerRewards(registrar)
+        registerVoteCommands(registrar)
     }
 
     private fun registerPlayTime(registrar: Commands) {
@@ -264,6 +270,184 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
             node,
             "Claim milestone playtime rewards",
             listOf("playtimerewards"),
+        )
+    }
+
+    private fun registerVoteCommands(registrar: Commands) {
+        val votesNode = Commands.literal("votes")
+            .requires { it.sender.hasPermission("obsidian.command.votes") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val count = voteService.getVoteCount(player.uniqueId)
+                context.locale.send(player, "playtime.votes-self", "votes" to count)
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.argument("target", StringArgumentType.word())
+                    .requires { it.sender.hasPermission("obsidian.command.votes.others") || it.sender.hasPermission("obsidian.admin") }
+                    .suggests { ctx, b ->
+                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val sender = ctx.source.sender
+                        val targetName = StringArgumentType.getString(ctx, "target")
+                        val online = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+                        if (online != null) {
+                            context.locale.send(
+                                sender,
+                                "playtime.votes-other",
+                                "target" to online.name,
+                                "votes" to voteService.getVoteCount(online.uniqueId),
+                            )
+                        } else {
+                            CommandHelper.dispatchAsync(
+                                context,
+                                sender,
+                                asyncWork = { context.userRepository.findByName(targetName) },
+                                onResult = { user ->
+                                    if (user == null) {
+                                        context.locale.send(sender, "general.player-not-found", "player" to targetName)
+                                    } else {
+                                        context.locale.send(
+                                            sender,
+                                            "playtime.votes-other",
+                                            "target" to user.username,
+                                            "votes" to voteService.getVoteCount(user.uuid),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                        Command.SINGLE_SUCCESS
+                    }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, votesNode, "Check vote counts", emptyList())
+
+        val voteTopNode = Commands.literal("votetop")
+            .requires { it.sender.hasPermission("obsidian.command.votetop") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                sendVoteTop(ctx.source.sender, 1)
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("page", IntegerArgumentType.integer(1)).executes { ctx ->
+                    sendVoteTop(ctx.source.sender, IntegerArgumentType.getInteger(ctx, "page"))
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, voteTopNode, "View vote leaderboard", emptyList())
+
+        val voteEditNode = Commands.literal("voteedit")
+            .requires { it.sender.hasPermission("obsidian.command.voteedit") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("add").then(
+                    Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                        b.buildFuture()
+                    }.then(
+                        Commands.argument("amount", IntegerArgumentType.integer(1)).executes { ctx ->
+                            handleVoteEdit(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                "add",
+                                IntegerArgumentType.getInteger(ctx, "amount").toLong()
+                            )
+                            Command.SINGLE_SUCCESS
+                        }
+                    ).executes { ctx ->
+                        handleVoteEdit(ctx.source.sender, StringArgumentType.getString(ctx, "target"), "add", 1L)
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            )
+            .then(
+                Commands.literal("set").then(
+                    Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                        b.buildFuture()
+                    }.then(
+                        Commands.argument("amount", IntegerArgumentType.integer(0)).executes { ctx ->
+                            handleVoteEdit(
+                                ctx.source.sender,
+                                StringArgumentType.getString(ctx, "target"),
+                                "set",
+                                IntegerArgumentType.getInteger(ctx, "amount").toLong()
+                            )
+                            Command.SINGLE_SUCCESS
+                        }
+                    )
+                )
+            )
+            .then(
+                Commands.literal("clear").then(
+                    Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                        CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        handleVoteEdit(ctx.source.sender, StringArgumentType.getString(ctx, "target"), "clear", 0L)
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            )
+            .build()
+        registrar.register(context.plugin.pluginMeta, voteEditNode, "Manage player vote counts", emptyList())
+    }
+
+    private fun sendVoteTop(sender: CommandSender, requestedPage: Int) {
+        val all = voteService.getTopVotes(100, 0)
+        if (all.isEmpty()) {
+            context.locale.send(sender, "playtime.votetop-empty")
+            return
+        }
+        val perPage = 10
+        val totalPages = ceil(all.size.toDouble() / perPage).toInt().coerceAtLeast(1)
+        val page = requestedPage.coerceIn(1, totalPages)
+        val from = (page - 1) * perPage
+        val to = minOf(from + perPage, all.size)
+
+        context.locale.send(sender, "playtime.votetop-header", "page" to page, "pages" to totalPages)
+        for (i in from until to) {
+            val rec = all[i]
+            context.locale.sendRaw(
+                sender,
+                "playtime.votetop-entry",
+                "rank" to (i + 1),
+                "player" to rec.username,
+                "votes" to rec.voteCount,
+            )
+        }
+    }
+
+    private fun handleVoteEdit(sender: CommandSender, targetName: String, action: String, amount: Long) {
+        val online = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+        if (online != null) {
+            applyVoteEdit(sender, online.uniqueId, online.name, action, amount)
+            return
+        }
+        CommandHelper.dispatchAsync(
+            context,
+            sender,
+            asyncWork = { context.userRepository.findByName(targetName) },
+            onResult = { user ->
+                if (user == null) {
+                    context.locale.send(sender, "general.player-not-found", "player" to targetName)
+                } else {
+                    applyVoteEdit(sender, user.uuid, user.username, action, amount)
+                }
+            },
+        )
+    }
+
+    private fun applyVoteEdit(sender: CommandSender, uuid: java.util.UUID, name: String, action: String, amount: Long) {
+        val updated = when (action) {
+            "add" -> voteService.addVotes(uuid, name, amount)
+            "set" -> voteService.setVotes(uuid, name, amount)
+            else -> voteService.setVotes(uuid, name, 0L)
+        }
+        context.locale.send(
+            sender,
+            "playtime.voteedit-updated",
+            "target" to name,
+            "votes" to updated.voteCount,
         )
     }
 }

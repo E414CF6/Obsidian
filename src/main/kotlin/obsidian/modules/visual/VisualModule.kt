@@ -4,6 +4,10 @@ import com.mojang.brigadier.Command
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import io.papermc.paper.command.brigadier.Commands
+import io.papermc.paper.command.brigadier.argument.ArgumentTypes
+import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
+import io.papermc.paper.registry.RegistryAccess
+import io.papermc.paper.registry.RegistryKey
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.database.StoredLocation
@@ -36,6 +40,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
     val signService = SignService(context)
     val mirrorService = MirrorService(context)
     val spawnerEggService = SpawnerEggService(context)
+    val paintingAndParticleService = PaintingAndParticleService(context)
+    val dialogService = DialogService(context)
 
     override fun onEnable() {
         context.registerService(selectionService)
@@ -45,6 +51,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         context.registerService(signService)
         context.registerService(mirrorService)
         context.registerService(spawnerEggService)
+        context.registerService(paintingAndParticleService)
+        context.registerService(dialogService)
     }
 
     override fun onDisable() {
@@ -56,6 +64,8 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         portalService.reload()
         hologramService.reload()
         signService.reload()
+        paintingAndParticleService.reload()
+        dialogService.reload()
     }
 
     override fun listeners(): List<Listener> = listOf(
@@ -64,6 +74,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         hologramService,
         mirrorService,
         spawnerEggService,
+        paintingAndParticleService,
     )
 
     override fun registerCommands(registrar: Commands) {
@@ -73,6 +84,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registerArmorStandCommands(registrar)
         registerSignCommands(registrar)
         registerWorldAndBuildTools(registrar)
+        registerTier3And4Visual(registrar)
     }
 
     private fun registerSelectionCommands(registrar: Commands) {
@@ -814,5 +826,104 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             }
         }
         context.locale.send(player, "visual.lfix-done", "chunks" to count)
+    }
+
+    private fun registerTier3And4Visual(registrar: Commands) {
+        // /panimation <circle|helix|ring|burst> [particle]
+        val presets = listOf("circle", "helix", "ring", "burst")
+        val pAnimNode = Commands.literal("panimation")
+            .requires { it.sender.hasPermission("obsidian.command.panimation") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("preset", StringArgumentType.word()).suggests { _, b ->
+                    presets.filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val preset = StringArgumentType.getString(ctx, "preset")
+                    paintingAndParticleService.playPreset(player, preset, null)
+                    context.locale.send(player, "visual.panimation-played", "preset" to preset.lowercase())
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("particle", StringArgumentType.word()).suggests { _, b ->
+                        RegistryAccess.registryAccess().getRegistry(RegistryKey.PARTICLE_TYPE)
+                            .keyStream().map { it.key().value() }
+                            .filter { it.startsWith(b.remaining, true) }
+                            .limit(25)
+                            .forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val preset = StringArgumentType.getString(ctx, "preset")
+                        val particle = StringArgumentType.getString(ctx, "particle")
+                        paintingAndParticleService.playPreset(player, preset, particle)
+                        context.locale.send(player, "visual.panimation-played", "preset" to preset.lowercase())
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, pAnimNode, "Play a particle animation preset", emptyList())
+
+        // /dialogs <list|open <id> [player]>
+        val dialogsNode = Commands.literal("dialogs")
+            .requires { it.sender.hasPermission("obsidian.command.dialogs") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("list").executes { ctx ->
+                    val ids = dialogService.getDialogIds()
+                    if (ids.isEmpty()) {
+                        context.locale.send(ctx.source.sender, "visual.dialog-list-empty")
+                    } else {
+                        context.locale.send(
+                            ctx.source.sender,
+                            "visual.dialog-list",
+                            "dialogs" to ids.joinToString(", ")
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).then(
+                Commands.literal("open").then(
+                    Commands.argument("id", StringArgumentType.word()).suggests { _, b ->
+                        dialogService.getDialogIds().filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val id = StringArgumentType.getString(ctx, "id")
+                        if (!dialogService.openDialog(player, id)) {
+                            context.locale.send(player, "visual.dialog-not-found", "id" to id)
+                        }
+                        Command.SINGLE_SUCCESS
+                    }.then(
+                        Commands.argument("target", ArgumentTypes.player())
+                            .requires {
+                                it.sender.hasPermission("obsidian.command.dialogs.others") || it.sender.hasPermission(
+                                    "obsidian.admin"
+                                )
+                            }
+                            .executes { ctx ->
+                                val id = StringArgumentType.getString(ctx, "id")
+                                val target =
+                                    ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                        .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                                if (!dialogService.openDialog(target, id)) {
+                                    context.locale.send(ctx.source.sender, "visual.dialog-not-found", "id" to id)
+                                } else {
+                                    context.locale.send(
+                                        ctx.source.sender,
+                                        "visual.dialog-opened",
+                                        "id" to id,
+                                        "target" to target.name,
+                                    )
+                                }
+                                Command.SINGLE_SUCCESS
+                            }
+                    )
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            dialogsNode,
+            "Display configurable native Paper 26.3 dialogs",
+            listOf("dialog"),
+        )
     }
 }

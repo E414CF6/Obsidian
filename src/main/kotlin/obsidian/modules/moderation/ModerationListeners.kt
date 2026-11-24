@@ -15,6 +15,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.block.Action
 import org.bukkit.event.entity.EntityDamageByEntityEvent
 import org.bukkit.event.entity.EntityDamageEvent
+import org.bukkit.event.entity.EntityPickupItemEvent
 import org.bukkit.event.player.*
 
 /**
@@ -28,6 +29,17 @@ class ModerationListeners(
     @EventHandler(priority = EventPriority.HIGHEST)
     fun onPreLogin(event: AsyncPlayerPreLoginEvent) {
         val ip = event.address.hostAddress
+
+        val lockedIps = runBlocking { context.ipLockRepository.findByUuid(event.uniqueId) }
+        if (lockedIps.isNotEmpty() && lockedIps.none { it.ip == ip }) {
+            val screen = TextFormatter.format(
+                context.locale.raw("moderation.iplock-denied"),
+                mapOf("ip" to ip),
+            )
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, screen)
+            return
+        }
+
         val isAllowed = runBlocking { context.punishmentRepository.isAllowed(event.uniqueId) }
         if (isAllowed) return
 
@@ -58,8 +70,23 @@ class ModerationListeners(
         val player = event.player
         service.loadOnlineModerationState(player)
         service.applyVanishVisibilityForViewer(player)
-        if (service.isVanished(player.uniqueId)) {
+        if (service.isVanished(player.uniqueId) && service.getVanishOptions(player.uniqueId).hideJoinQuit) {
             event.joinMessage(null)
+        }
+
+        context.scheduler.runAsync {
+            val alert = runBlocking { context.alertRepository.findByUuid(player.uniqueId) }
+            if (alert != null) {
+                val msg = context.locale.component(
+                    "moderation.alert-triggered",
+                    mapOf("player" to player.name, "reason" to alert.reason),
+                )
+                for (staff in Bukkit.getOnlinePlayers()) {
+                    if (staff.hasPermission("obsidian.moderation.alert") || staff.hasPermission("obsidian.admin")) {
+                        staff.sendMessage(msg)
+                    }
+                }
+            }
         }
 
         if (service.dupeipOnJoin) {
@@ -114,7 +141,7 @@ class ModerationListeners(
     @EventHandler(priority = EventPriority.HIGH)
     fun onQuit(event: PlayerQuitEvent) {
         val player = event.player
-        if (service.isVanished(player.uniqueId)) {
+        if (service.isVanished(player.uniqueId) && service.getVanishOptions(player.uniqueId).hideJoinQuit) {
             event.quitMessage(null)
         }
         service.clearOnlineTransientState(player.uniqueId)
@@ -193,10 +220,12 @@ class ModerationListeners(
             return
         }
         val jail = service.getActiveJail(player.uniqueId) ?: return
-        val jailLoc = jail.jailName?.let(service::getJailLocation) ?: return
+        val jailName = jail.jailName ?: return
+        val jailLoc = service.getJailLocation(jailName) ?: return
+        val radius = service.getJailRadius(jailName)
         if (event.to.world?.name != jailLoc.world || event.to.distanceSquared(
                 jailLoc.toBukkitLocation() ?: return
-            ) > 64.0
+            ) > (radius * radius)
         ) {
             jailLoc.toBukkitLocation()?.let { event.to = it }
         }
@@ -210,17 +239,32 @@ class ModerationListeners(
             context.locale.send(player, "moderation.cuffed-blocked")
             return
         }
-        if (service.isVanished(player.uniqueId) && service.vanishSilentChest && event.action == Action.RIGHT_CLICK_BLOCK) {
-            val block = event.clickedBlock ?: return
-            val state = block.state
-            if (state is Container) {
+        if (service.isVanished(player.uniqueId)) {
+            val opts = service.getVanishOptions(player.uniqueId)
+            if (opts.noInteract) {
                 event.isCancelled = true
-                val copy = Bukkit.createInventory(
-                    null, state.inventory.size, context.locale.component("moderation.silent-inspect-title")
-                )
-                copy.contents = state.inventory.contents
-                player.openInventory(copy)
+                return
             }
+            if (opts.silentChest && event.action == Action.RIGHT_CLICK_BLOCK) {
+                val block = event.clickedBlock ?: return
+                val state = block.state
+                if (state is Container) {
+                    event.isCancelled = true
+                    val copy = Bukkit.createInventory(
+                        null, state.inventory.size, context.locale.component("moderation.silent-inspect-title")
+                    )
+                    copy.contents = state.inventory.contents
+                    player.openInventory(copy)
+                }
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    fun onPickup(event: EntityPickupItemEvent) {
+        val player = event.entity as? Player ?: return
+        if (service.isVanished(player.uniqueId) && service.getVanishOptions(player.uniqueId).noPickup) {
+            event.isCancelled = true
         }
     }
 
@@ -228,6 +272,10 @@ class ModerationListeners(
     fun onDamage(event: EntityDamageEvent) {
         val victim = event.entity as? Player ?: return
         if (service.isCuffed(victim.uniqueId) || service.getActiveJail(victim.uniqueId) != null) {
+            event.isCancelled = true
+            return
+        }
+        if (service.isVanished(victim.uniqueId) && service.getVanishOptions(victim.uniqueId).noDamage) {
             event.isCancelled = true
             return
         }

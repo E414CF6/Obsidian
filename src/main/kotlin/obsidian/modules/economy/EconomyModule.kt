@@ -28,11 +28,13 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
 
     val economyService = EconomyService(context)
     val worthService = WorthService(context, economyService)
+    val deliveryService = DeliveryService(context)
     private var vaultHook: VaultEconomyHook? = null
 
     override fun onEnable() {
         context.registerService(economyService)
         context.registerService(worthService)
+        context.registerService(deliveryService)
         if (Bukkit.getPluginManager().isPluginEnabled("Vault")) {
             vaultHook = VaultEconomyHook(context.plugin, economyService).also {
                 it.register()
@@ -50,9 +52,10 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
     override fun onReload() {
         economyService.reload()
         worthService.reload()
+        deliveryService.reload()
     }
 
-    override fun listeners(): List<Listener> = listOf(economyService)
+    override fun listeners(): List<Listener> = listOf(economyService, deliveryService)
 
     override fun registerCommands(registrar: Commands) {
         registerBalance(registrar)
@@ -63,6 +66,7 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
         registerWorth(registrar)
         registerSetWorth(registrar)
         registerSell(registrar)
+        registerDelivery(registrar)
     }
 
     private fun registerBalance(registrar: Commands) {
@@ -468,5 +472,119 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             "count" to res.itemCount.toString(),
             "amount" to economyService.formatMoney(res.totalEarned),
         )
+    }
+
+    private fun registerDelivery(registrar: Commands) {
+        val node = Commands.literal("delivery")
+            .requires { it.sender.hasPermission("obsidian.command.delivery") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                deliveryService.openGui(player, 1)
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.literal("gui").executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    deliveryService.openGui(player, 1)
+                    Command.SINGLE_SUCCESS
+                }
+            )
+            .then(
+                Commands.literal("send")
+                    .requires { it.sender.hasPermission("obsidian.command.delivery.send") || it.sender.hasPermission("obsidian.admin") }
+                    .then(
+                        Commands.argument("target", StringArgumentType.word()).suggests { ctx, b ->
+                            CommandHelper.suggestOnlinePlayers(ctx.source.sender, b.remaining).forEach(b::suggest)
+                            b.buildFuture()
+                        }.executes { ctx ->
+                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                            handleSendDelivery(player, StringArgumentType.getString(ctx, "target"), "")
+                            Command.SINGLE_SUCCESS
+                        }.then(
+                            Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                                val player =
+                                    CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                                handleSendDelivery(
+                                    player,
+                                    StringArgumentType.getString(ctx, "target"),
+                                    StringArgumentType.getString(ctx, "message"),
+                                )
+                                Command.SINGLE_SUCCESS
+                            }
+                        )
+                    )
+            )
+            .then(
+                Commands.literal("sendall")
+                    .requires {
+                        it.sender.hasPermission("obsidian.command.delivery.sendall") || it.sender.hasPermission(
+                            "obsidian.admin"
+                        )
+                    }
+                    .executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        handleSendAllDelivery(player, "")
+                        Command.SINGLE_SUCCESS
+                    }.then(
+                        Commands.argument("message", StringArgumentType.greedyString()).executes { ctx ->
+                            val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                            handleSendAllDelivery(player, StringArgumentType.getString(ctx, "message"))
+                            Command.SINGLE_SUCCESS
+                        }
+                    )
+            )
+            .build()
+
+        registrar.register(context.plugin.pluginMeta, node, "Open or send item deliveries", emptyList())
+    }
+
+    private fun handleSendDelivery(sender: Player, targetName: String, message: String) {
+        val held = sender.inventory.itemInMainHand
+        if (held.type.isAir) {
+            context.locale.send(sender, "utility.hold-item")
+            return
+        }
+        val itemCopy = held.clone()
+        val online = Bukkit.getPlayerExact(targetName) ?: Bukkit.getPlayer(targetName)
+        if (online != null) {
+            sender.inventory.setItemInMainHand(null)
+            deliveryService.sendDelivery(sender.name, online.uniqueId, itemCopy, message)
+            context.locale.send(sender, "economy.delivery-sent", "target" to online.name)
+            return
+        }
+        CommandHelper.dispatchAsync(
+            context,
+            sender,
+            asyncWork = { context.userRepository.findByName(targetName) },
+            onResult = { user ->
+                if (user == null) {
+                    context.locale.send(sender, "general.player-not-found", "player" to targetName)
+                } else {
+                    val currentHand = sender.inventory.itemInMainHand
+                    if (currentHand.type.isAir) {
+                        context.locale.send(sender, "utility.hold-item")
+                        return@dispatchAsync
+                    }
+                    val toSend = currentHand.clone()
+                    sender.inventory.setItemInMainHand(null)
+                    deliveryService.sendDelivery(sender.name, user.uuid, toSend, message)
+                    context.locale.send(sender, "economy.delivery-sent", "target" to user.username)
+                }
+            },
+        )
+    }
+
+    private fun handleSendAllDelivery(sender: Player, message: String) {
+        val held = sender.inventory.itemInMainHand
+        if (held.type.isAir) {
+            context.locale.send(sender, "utility.hold-item")
+            return
+        }
+        val itemCopy = held.clone()
+        val targets = Bukkit.getOnlinePlayers().toList()
+        for (target in targets) {
+            deliveryService.sendDelivery(sender.name, target.uniqueId, itemCopy.clone(), message)
+        }
+        context.locale.send(sender, "economy.delivery-sent-all", "count" to targets.size)
     }
 }

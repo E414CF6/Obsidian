@@ -35,6 +35,7 @@ class TeleportService(private val context: ObsidianContext) : Listener {
         private set
 
     private val invulnerableUntil = ConcurrentHashMap<UUID, Long>()
+    private val bypassSafePlayers = ConcurrentHashMap.newKeySet<UUID>()
 
     init {
         reload()
@@ -52,6 +53,14 @@ class TeleportService(private val context: ObsidianContext) : Listener {
     /**
      * Teleports [player] to [destination], optionally finding a safe landing spot and recording `/back`.
      */
+    fun isSafeBypassEnabled(uuid: UUID): Boolean = uuid in bypassSafePlayers
+
+    fun toggleSafeBypass(uuid: UUID): Boolean =
+        if (bypassSafePlayers.add(uuid)) true else {
+            bypassSafePlayers.remove(uuid)
+            false
+        }
+
     fun teleport(
         player: Player,
         destination: Location,
@@ -60,7 +69,8 @@ class TeleportService(private val context: ObsidianContext) : Listener {
         recordBack: Boolean = true,
     ): CompletableFuture<Boolean> {
         val origin = player.location.clone()
-        val shouldCheckSafe = ensureSafe && player.hasPermission("obsidian.teleport.safe")
+        val shouldCheckSafe =
+            ensureSafe && player.hasPermission("obsidian.teleport.safe") && !isSafeBypassEnabled(player.uniqueId)
         val targetFuture: CompletableFuture<Location?> = if (shouldCheckSafe) {
             SafeLocationFinder.findSafeLocation(destination, safeDownThenUp)
         } else {
@@ -104,6 +114,13 @@ class TeleportService(private val context: ObsidianContext) : Listener {
     fun getBackLocation(player: Player): Location? = context.users.getCached(player).backLocation?.toBukkitLocation()
 
     fun getDeathLocation(player: Player): Location? = context.users.getCached(player).deathLocation?.toBukkitLocation()
+
+    fun resetBack(player: Player) {
+        val profile = context.users.getCached(player)
+        profile.backLocation = null
+        profile.deathLocation = null
+        profile.markDirty()
+    }
 
     private fun grantInvulnerability(uuid: UUID) {
         if (invulnerabilitySeconds <= 0) return

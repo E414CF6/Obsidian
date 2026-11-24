@@ -7,23 +7,28 @@ import com.mojang.brigadier.arguments.StringArgumentType
 import io.papermc.paper.command.brigadier.Commands
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes
 import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver
+import io.papermc.paper.registry.RegistryAccess
+import io.papermc.paper.registry.RegistryKey
+import net.kyori.adventure.key.Key
+import net.kyori.adventure.text.Component
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.module.ObsidianModule
 import obsidian.core.text.DurationParser
 import obsidian.core.text.TextFormatter
-import org.bukkit.Bukkit
-import org.bukkit.GameMode
-import org.bukkit.Material
+import org.bukkit.*
 import org.bukkit.attribute.Attribute
 import org.bukkit.command.CommandSender
 import org.bukkit.entity.Player
 import org.bukkit.event.Listener
+import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause
 import org.bukkit.inventory.ItemFlag
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.MenuType
 import org.bukkit.inventory.meta.LeatherArmorMeta
 import org.bukkit.inventory.meta.SkullMeta
+import org.bukkit.potion.PotionEffect
+import java.net.URI
 
 /**
  * Essential server and player utility commands (`/gm`, `/fly`, `/god`, `/heal`, `/feed`, `/speed`,
@@ -37,20 +42,35 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
     private val flightAndCombatService = FlightAndCombatService(context)
     private val godListener = GodModeListener(context, flightAndCombatService)
     private val shulkerBoxService = ShulkerBoxService(context)
+    val combatTagService = CombatTagService(context)
+    val anvilAndEnchantService = AnvilAndEnchantService(context)
     val savedItemService = SavedItemService(context)
     val customRecipeService = CustomRecipeService(context)
     val scavengerService = ScavengerService(context)
+    val serverOpsService = ServerOpsService(context)
 
-    override fun listeners(): List<Listener> = listOf(godListener, shulkerBoxService, flightAndCombatService)
+    override fun listeners(): List<Listener> = listOf(
+        godListener,
+        shulkerBoxService,
+        flightAndCombatService,
+        combatTagService,
+        anvilAndEnchantService,
+        serverOpsService,
+    )
 
     override fun onEnable() {
         context.registerService(savedItemService)
         context.registerService(customRecipeService)
         context.registerService(scavengerService)
+        context.registerService(combatTagService)
+        context.registerService(anvilAndEnchantService)
+        context.registerService(serverOpsService)
         flightAndCombatService.start()
+        combatTagService.start()
     }
 
     override fun onDisable() {
+        combatTagService.stop()
         flightAndCombatService.stop()
         shulkerBoxService.closeAll()
         customRecipeService.unregisterAll()
@@ -59,6 +79,9 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
     override fun onReload() {
         savedItemService.load()
         customRecipeService.reload()
+        combatTagService.reload()
+        anvilAndEnchantService.reload()
+        serverOpsService.reload()
     }
 
     override fun registerCommands(registrar: Commands) {
@@ -79,6 +102,8 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         registerPersonalEnvironmentCommands(registrar)
         registerGiveAndItem(registrar)
         registerSudo(registrar)
+        registerTier2Commands(registrar)
+        registerTier3Commands(registrar)
     }
 
     private fun registerGameMode(registrar: Commands) {
@@ -1712,5 +1737,1132 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
     private fun sendUsage(sender: CommandSender, usage: String): Int {
         context.locale.send(sender, "general.invalid-usage", "usage" to usage)
         return 0
+    }
+
+    private fun registerTier2Commands(registrar: Commands) {
+        // /mobhead <entity|player> [amount]
+        val mobHeadNode = Commands.literal("mobhead")
+            .requires { it.sender.hasPermission("obsidian.command.mobhead") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("target", StringArgumentType.word()).suggests { _, b ->
+                    listOf("SKELETON", "WITHER_SKELETON", "ZOMBIE", "CREEPER", "ENDER_DRAGON", "PIGLIN")
+                        .filter { it.startsWith(b.remaining, true) }
+                        .forEach(b::suggest)
+                    Bukkit.getOnlinePlayers().map { it.name }
+                        .filter { it.startsWith(b.remaining, true) }
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    giveMobOrPlayerHead(player, StringArgumentType.getString(ctx, "target"), 1)
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("amount", IntegerArgumentType.integer(1, 64)).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        giveMobOrPlayerHead(
+                            player,
+                            StringArgumentType.getString(ctx, "target"),
+                            IntegerArgumentType.getInteger(ctx, "amount"),
+                        )
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, mobHeadNode, "Obtain a mob or player head", emptyList())
+
+        // /enchant <enchantment> <level> [target]
+        val enchantNode = Commands.literal("enchant")
+            .requires { it.sender.hasPermission("obsidian.command.enchant") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("enchantment", StringArgumentType.word()).suggests { _, b ->
+                    RegistryAccess.registryAccess()
+                        .getRegistry(RegistryKey.ENCHANTMENT)
+                        .map { it.key.key }
+                        .filter { it.startsWith(b.remaining, true) }
+                        .sorted()
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.then(
+                    Commands.argument("level", IntegerArgumentType.integer(0, 255)).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        applyEnchant(
+                            ctx.source.sender,
+                            player,
+                            StringArgumentType.getString(ctx, "enchantment"),
+                            IntegerArgumentType.getInteger(ctx, "level"),
+                        )
+                        Command.SINGLE_SUCCESS
+                    }.then(
+                        Commands.argument("target", ArgumentTypes.player())
+                            .requires {
+                                it.sender.hasPermission("obsidian.command.enchant.others") || it.sender.hasPermission(
+                                    "obsidian.admin"
+                                )
+                            }
+                            .executes { ctx ->
+                                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                                applyEnchant(
+                                    ctx.source.sender,
+                                    target,
+                                    StringArgumentType.getString(ctx, "enchantment"),
+                                    IntegerArgumentType.getInteger(ctx, "level"),
+                                )
+                                Command.SINGLE_SUCCESS
+                            }
+                    )
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, enchantNode, "Enchant held item", emptyList())
+
+        // /disableenchant <enchantment>
+        val disableEnchantNode = Commands.literal("disableenchant")
+            .requires { it.sender.hasPermission("obsidian.command.disableenchant") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("enchantment", StringArgumentType.word()).suggests { _, b ->
+                    RegistryAccess.registryAccess()
+                        .getRegistry(RegistryKey.ENCHANTMENT)
+                        .map { it.key.key }
+                        .filter { it.startsWith(b.remaining, true) }
+                        .sorted()
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val name = StringArgumentType.getString(ctx, "enchantment")
+                    val ench = anvilAndEnchantService.resolveEnchantment(name)
+                    if (ench == null) {
+                        context.locale.send(ctx.source.sender, "utility.enchant-unknown", "enchant" to name)
+                        return@executes 0
+                    }
+                    val disabled = anvilAndEnchantService.toggleDisabledEnchant(ench)
+                    val state = context.locale.raw(if (disabled) "general.state-on" else "general.state-off")
+                    context.locale.send(
+                        ctx.source.sender,
+                        "utility.enchant-disable-toggled",
+                        "enchant" to ench.key.key,
+                        "state" to state,
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            disableEnchantNode,
+            "Enable or disable an enchantment globally",
+            emptyList()
+        )
+
+        // /repaircost
+        val repairCostNode = Commands.literal("repaircost")
+            .requires { it.sender.hasPermission("obsidian.command.repaircost") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val held = player.inventory.itemInMainHand
+                if (held.type.isAir) {
+                    context.locale.send(player, "utility.hold-item")
+                    return@executes 0
+                }
+                val cost = anvilAndEnchantService.getRepairCost(held)
+                context.locale.send(player, "utility.repaircost-show", "cost" to cost)
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            repairCostNode,
+            "Check held item anvil repair penalty",
+            emptyList()
+        )
+
+        // /anvilrepaircost <cost>
+        val setRepairCostNode = Commands.literal("anvilrepaircost")
+            .requires { it.sender.hasPermission("obsidian.command.anvilrepaircost") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("cost", IntegerArgumentType.integer(0, 1000)).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val held = player.inventory.itemInMainHand
+                    if (held.type.isAir) {
+                        context.locale.send(player, "utility.hold-item")
+                        return@executes 0
+                    }
+                    val cost = IntegerArgumentType.getInteger(ctx, "cost")
+                    anvilAndEnchantService.setRepairCost(held, cost)
+                    context.locale.send(player, "utility.repaircost-set", "cost" to cost)
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            setRepairCostNode,
+            "Set held item anvil repair penalty",
+            emptyList()
+        )
+
+        // /trim <material> <pattern>
+        val trimNode = Commands.literal("trim")
+            .requires { it.sender.hasPermission("obsidian.command.trim") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("material", StringArgumentType.word()).suggests { _, b ->
+                    RegistryAccess.registryAccess()
+                        .getRegistry(RegistryKey.TRIM_MATERIAL)
+                        .map { it.key.key }
+                        .filter { it.startsWith(b.remaining, true) }
+                        .sorted()
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.then(
+                    Commands.argument("pattern", StringArgumentType.word()).suggests { _, b ->
+                        RegistryAccess.registryAccess()
+                            .getRegistry(RegistryKey.TRIM_PATTERN)
+                            .map { it.key.key }
+                            .filter { it.startsWith(b.remaining, true) }
+                            .sorted()
+                            .forEach(b::suggest)
+                        b.buildFuture()
+                    }.executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val held = player.inventory.itemInMainHand
+                        if (held.type.isAir) {
+                            context.locale.send(player, "utility.hold-item")
+                            return@executes 0
+                        }
+                        val matName = StringArgumentType.getString(ctx, "material")
+                        val patName = StringArgumentType.getString(ctx, "pattern")
+                        val mat = anvilAndEnchantService.resolveTrimMaterial(matName)
+                        val pat = anvilAndEnchantService.resolveTrimPattern(patName)
+                        if (mat == null || pat == null) {
+                            context.locale.send(player, "utility.trim-invalid")
+                            return@executes 0
+                        }
+                        if (!anvilAndEnchantService.applyTrim(held, mat, pat)) {
+                            context.locale.send(player, "utility.trim-armor-only")
+                            return@executes 0
+                        }
+                        context.locale.send(
+                            player,
+                            "utility.trim-applied",
+                            "material" to mat.key.key,
+                            "pattern" to pat.key.key
+                        )
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, trimNode, "Apply an armor trim to held armor", emptyList())
+
+        // /itemcmdata <value|clear>
+        val cmDataNode = Commands.literal("itemcmdata")
+            .requires { it.sender.hasPermission("obsidian.command.itemcmdata") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("clear").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val held = player.inventory.itemInMainHand
+                if (held.type.isAir) {
+                    context.locale.send(player, "utility.hold-item")
+                    return@executes 0
+                }
+                val meta = held.itemMeta
+                val comp = meta.customModelDataComponent
+                comp.floats = emptyList()
+                meta.setCustomModelDataComponent(comp)
+                held.itemMeta = meta
+                context.locale.send(player, "utility.itemcmdata-cleared")
+                Command.SINGLE_SUCCESS
+            })
+            .then(Commands.argument("value", IntegerArgumentType.integer(0)).executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val held = player.inventory.itemInMainHand
+                if (held.type.isAir) {
+                    context.locale.send(player, "utility.hold-item")
+                    return@executes 0
+                }
+                val value = IntegerArgumentType.getInteger(ctx, "value")
+                val meta = held.itemMeta
+                val comp = meta.customModelDataComponent
+                comp.floats = listOf(value.toFloat())
+                meta.setCustomModelDataComponent(comp)
+                held.itemMeta = meta
+                context.locale.send(player, "utility.itemcmdata-set", "value" to value)
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            cmDataNode,
+            "Set or clear custom model data on held item",
+            emptyList()
+        )
+
+        // /book <title|author|sign|unsign> [value]
+        val bookNode = Commands.literal("book")
+            .requires { it.sender.hasPermission("obsidian.command.book") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("title").then(
+                    Commands.argument("value", StringArgumentType.greedyString()).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        editBook(player, "title", StringArgumentType.getString(ctx, "value"))
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            )
+            .then(
+                Commands.literal("author").then(
+                    Commands.argument("value", StringArgumentType.greedyString()).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        editBook(player, "author", StringArgumentType.getString(ctx, "value"))
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            )
+            .then(Commands.literal("sign").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                editBook(player, "sign", "")
+                Command.SINGLE_SUCCESS
+            })
+            .then(Commands.literal("unsign").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                editBook(player, "unsign", "")
+                Command.SINGLE_SUCCESS
+            }).build()
+        registrar.register(context.plugin.pluginMeta, bookNode, "Edit book title, author, or signature", emptyList())
+
+        // /openbook
+        val openBookNode = Commands.literal("openbook")
+            .requires { it.sender.hasPermission("obsidian.command.openbook") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val held = player.inventory.itemInMainHand
+                if (held.type != Material.WRITTEN_BOOK) {
+                    context.locale.send(player, "utility.book-written-only")
+                    return@executes 0
+                }
+                player.openBook(held)
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(context.plugin.pluginMeta, openBookNode, "Open held written book GUI", emptyList())
+    }
+
+    private fun giveMobOrPlayerHead(player: Player, target: String, amount: Int) {
+        val entityType = runCatching { org.bukkit.entity.EntityType.valueOf(target.uppercase()) }.getOrNull()
+        val item = if (entityType != null) {
+            CombatTagService.createMobHead(entityType, amount)
+        } else {
+            null
+        } ?: CombatTagService.createPlayerSkull(target, Bukkit.getPlayerExact(target)).apply {
+            this.amount = amount.coerceIn(1, 64)
+        }
+        val leftover = player.inventory.addItem(item)
+        leftover.values.forEach { player.world.dropItemNaturally(player.location, it) }
+        context.locale.send(player, "utility.mobhead-given", "target" to target, "amount" to item.amount)
+    }
+
+    private fun applyEnchant(sender: CommandSender, target: Player, enchantName: String, level: Int) {
+        val held = target.inventory.itemInMainHand
+        if (held.type.isAir) {
+            context.locale.send(sender, "utility.hold-item")
+            return
+        }
+        val ench = anvilAndEnchantService.resolveEnchantment(enchantName)
+        if (ench == null) {
+            context.locale.send(sender, "utility.enchant-unknown", "enchant" to enchantName)
+            return
+        }
+        if (anvilAndEnchantService.isEnchantDisabled(ench) && !sender.hasPermission("obsidian.admin")) {
+            context.locale.send(sender, "utility.enchant-disabled-all")
+            return
+        }
+        if (level == 0) {
+            held.removeEnchantment(ench)
+            context.locale.send(sender, "utility.enchant-removed", "enchant" to ench.key.key, "target" to target.name)
+            return
+        }
+        val allowUnsafe =
+            sender.hasPermission("obsidian.command.enchant.unsafe") || sender.hasPermission("obsidian.admin")
+        if (allowUnsafe) {
+            held.addUnsafeEnchantment(ench, level)
+        } else {
+            if (!ench.canEnchantItem(held) || level > ench.maxLevel) {
+                context.locale.send(
+                    sender,
+                    "utility.enchant-unsafe-denied",
+                    "enchant" to ench.key.key,
+                    "max" to ench.maxLevel
+                )
+                return
+            }
+            held.addEnchantment(ench, level)
+        }
+        context.locale.send(
+            sender,
+            "utility.enchant-applied",
+            "enchant" to ench.key.key,
+            "level" to level,
+            "target" to target.name,
+        )
+    }
+
+    private fun editBook(player: Player, action: String, value: String) {
+        val held = player.inventory.itemInMainHand
+        if (held.type != Material.WRITABLE_BOOK && held.type != Material.WRITTEN_BOOK) {
+            context.locale.send(player, "utility.book-required")
+            return
+        }
+        val meta = held.itemMeta as? org.bukkit.inventory.meta.BookMeta ?: return
+        when (action) {
+            "title" -> {
+                meta.title(TextFormatter.format(value))
+                held.itemMeta = meta
+                context.locale.send(player, "utility.book-updated", "field" to "title")
+            }
+
+            "author" -> {
+                meta.author(TextFormatter.format(value))
+                held.itemMeta = meta
+                context.locale.send(player, "utility.book-updated", "field" to "author")
+            }
+
+            "sign" -> {
+                if (held.type == Material.WRITTEN_BOOK) return
+                val signed = ItemStack(Material.WRITTEN_BOOK, held.amount)
+                val signedMeta = signed.itemMeta as org.bukkit.inventory.meta.BookMeta
+                signedMeta.pages(meta.pages())
+                signedMeta.title(meta.title() ?: Component.text("Book"))
+                signedMeta.author(meta.author() ?: Component.text(player.name))
+                signed.itemMeta = signedMeta
+                player.inventory.setItemInMainHand(signed)
+                context.locale.send(player, "utility.book-signed")
+            }
+
+            "unsign" -> {
+                if (held.type == Material.WRITABLE_BOOK) return
+                val writable = ItemStack(Material.WRITABLE_BOOK, held.amount)
+                val writableMeta = writable.itemMeta as org.bukkit.inventory.meta.BookMeta
+                writableMeta.pages(meta.pages())
+                writable.itemMeta = writableMeta
+                player.inventory.setItemInMainHand(writable)
+                context.locale.send(player, "utility.book-unsigned")
+            }
+        }
+    }
+
+    private fun registerTier3Commands(registrar: Commands) {
+        // /world <world> [target]
+        val worldNode = Commands.literal("world")
+            .requires { it.sender.hasPermission("obsidian.command.world") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("world", ArgumentTypes.world()).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val world = ctx.getArgument("world", World::class.java)
+                    player.teleportAsync(world.spawnLocation, TeleportCause.COMMAND).thenAccept { ok ->
+                        if (ok) context.locale.send(player, "utility.world-teleported", "world" to world.name)
+                    }
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("target", ArgumentTypes.player())
+                        .requires {
+                            it.sender.hasPermission("obsidian.command.world.others") || it.sender.hasPermission(
+                                "obsidian.admin"
+                            )
+                        }
+                        .executes { ctx ->
+                            val world = ctx.getArgument("world", World::class.java)
+                            val target =
+                                ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                            target.teleportAsync(world.spawnLocation, TeleportCause.COMMAND).thenAccept { ok ->
+                                if (ok) {
+                                    context.locale.send(
+                                        ctx.source.sender,
+                                        "utility.world-teleported-other",
+                                        "target" to target.name,
+                                        "world" to world.name,
+                                    )
+                                }
+                            }
+                            Command.SINGLE_SUCCESS
+                        }
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            worldNode,
+            "Teleport yourself or another player to a world's spawn",
+            emptyList()
+        )
+
+        // /gamerule [rule] [value]
+        val gameRuleNode = Commands.literal("gamerule")
+            .requires { it.sender.hasPermission("obsidian.command.gamerule") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                context.locale.sendRaw(
+                    sender,
+                    "utility.gamerule-list",
+                    "world" to world.name,
+                    "rules" to GameRule.values().take(12)
+                        .joinToString(", ") { "${it.name}=${world.getGameRuleValue(it)}" },
+                )
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("rule", StringArgumentType.word()).suggests { _, b ->
+                    GameRule.values().map { it.name }.filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val sender = ctx.source.sender
+                    val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                    val ruleName = StringArgumentType.getString(ctx, "rule")
+                    val rule: GameRule<Any>? = GameRule.getByName<Any>(ruleName)
+                    if (rule == null) {
+                        context.locale.send(sender, "utility.gamerule-invalid", "rule" to ruleName)
+                        return@executes 0
+                    }
+                    context.locale.send(
+                        sender,
+                        "utility.gamerule-value",
+                        "world" to world.name,
+                        "rule" to rule.name,
+                        "value" to (world.getGameRuleValue(rule).toString() ?: "null"),
+                    )
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("value", StringArgumentType.word()).executes { ctx ->
+                        val sender = ctx.source.sender
+                        val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                        val ruleName = StringArgumentType.getString(ctx, "rule")
+                        val rawVal = StringArgumentType.getString(ctx, "value")
+                        val rule: GameRule<Any>? = GameRule.getByName<Any>(ruleName)
+                        if (rule == null) {
+                            context.locale.send(sender, "utility.gamerule-invalid", "rule" to ruleName)
+                            return@executes 0
+                        }
+                        context.scheduler.runGlobal {
+                            @Suppress("UNCHECKED_CAST")
+                            val ok = when (rule.type) {
+                                java.lang.Boolean::class.java, Boolean::class.java -> {
+                                    val b = rawVal.toBooleanStrictOrNull()
+                                    if (b != null) world.setGameRule(rule as GameRule<Boolean>, b) else false
+                                }
+
+                                Integer::class.java, Int::class.java -> {
+                                    val i = rawVal.toIntOrNull()
+                                    if (i != null) world.setGameRule(rule as GameRule<Int>, i) else false
+                                }
+
+                                else -> false
+                            }
+                            if (ok) {
+                                context.locale.send(
+                                    sender,
+                                    "utility.gamerule-set",
+                                    "world" to world.name,
+                                    "rule" to rule.name,
+                                    "value" to rawVal,
+                                )
+                            } else {
+                                context.locale.send(sender, "utility.gamerule-invalid", "rule" to "$ruleName=$rawVal")
+                            }
+                        }
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, gameRuleNode, "View or modify world gamerules", emptyList())
+
+        // /weather <sun|rain|thunder> [seconds]
+        val weatherNode = Commands.literal("weather")
+            .requires { it.sender.hasPermission("obsidian.command.weather") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("type", StringArgumentType.word()).suggests { _, b ->
+                    listOf("sun", "clear", "rain", "thunder", "storm").filter { it.startsWith(b.remaining, true) }
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    applyWorldWeather(ctx.source.sender, StringArgumentType.getString(ctx, "type"), 300)
+                }.then(
+                    Commands.argument("seconds", IntegerArgumentType.integer(1, 86400)).executes { ctx ->
+                        applyWorldWeather(
+                            ctx.source.sender,
+                            StringArgumentType.getString(ctx, "type"),
+                            IntegerArgumentType.getInteger(ctx, "seconds"),
+                        )
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, weatherNode, "Set world weather", emptyList())
+
+        // /time <day|noon|night|midnight|set <ticks>|add <ticks>>
+        val timeNode = Commands.literal("time")
+            .requires { it.sender.hasPermission("obsidian.command.time") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("day").executes { applyWorldTime(it.source.sender, 1000L, false) })
+            .then(Commands.literal("noon").executes { applyWorldTime(it.source.sender, 6000L, false) })
+            .then(Commands.literal("night").executes { applyWorldTime(it.source.sender, 13000L, false) })
+            .then(Commands.literal("midnight").executes { applyWorldTime(it.source.sender, 18000L, false) })
+            .then(
+                Commands.literal("set").then(
+                    Commands.argument("ticks", IntegerArgumentType.integer(0)).executes {
+                        applyWorldTime(it.source.sender, IntegerArgumentType.getInteger(it, "ticks").toLong(), false)
+                    }
+                )
+            ).then(
+                Commands.literal("add").then(
+                    Commands.argument("ticks", IntegerArgumentType.integer(1)).executes {
+                        applyWorldTime(it.source.sender, IntegerArgumentType.getInteger(it, "ticks").toLong(), true)
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, timeNode, "Adjust world time", emptyList())
+
+        // /viewdistance <distance> [world]
+        val viewDistNode = Commands.literal("viewdistance")
+            .requires { it.sender.hasPermission("obsidian.command.viewdistance") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("distance", IntegerArgumentType.integer(2, 32)).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val dist = IntegerArgumentType.getInteger(ctx, "distance")
+                    val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                    context.scheduler.runGlobal {
+                        world.viewDistance = dist
+                        world.sendViewDistance = dist
+                        context.locale.send(
+                            sender,
+                            "utility.viewdistance-set",
+                            "world" to world.name,
+                            "distance" to dist
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("world", ArgumentTypes.world()).executes { ctx ->
+                        val sender = ctx.source.sender
+                        val dist = IntegerArgumentType.getInteger(ctx, "distance")
+                        val world = ctx.getArgument("world", World::class.java)
+                        context.scheduler.runGlobal {
+                            world.viewDistance = dist
+                            world.sendViewDistance = dist
+                            context.locale.send(
+                                sender,
+                                "utility.viewdistance-set",
+                                "world" to world.name,
+                                "distance" to dist
+                            )
+                        }
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            viewDistNode,
+            "Dynamically update world view distance",
+            emptyList()
+        )
+
+        // /setmotd <text|reset>
+        val setMotdNode = Commands.literal("setmotd")
+            .requires { it.sender.hasPermission("obsidian.command.setmotd") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("motd", StringArgumentType.greedyString()).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val text = StringArgumentType.getString(ctx, "motd")
+                    if (text.equals("reset", ignoreCase = true) || text.equals("clear", ignoreCase = true)) {
+                        serverOpsService.setMotd(null)
+                        context.locale.send(sender, "utility.motd-reset")
+                    } else {
+                        serverOpsService.setMotd(text)
+                        context.locale.send(sender, "utility.motd-set", "motd" to text)
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, setMotdNode, "Override server ping MOTD dynamically", emptyList())
+
+        // /maxplayers <count|reset>
+        val maxPlayersNode = Commands.literal("maxplayers")
+            .requires { it.sender.hasPermission("obsidian.command.maxplayers") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("reset").executes { ctx ->
+                    serverOpsService.setMaxPlayers(null)
+                    context.locale.send(ctx.source.sender, "utility.maxplayers-reset")
+                    Command.SINGLE_SUCCESS
+                }
+            ).then(
+                Commands.argument("count", IntegerArgumentType.integer(1, 100000)).executes { ctx ->
+                    val count = IntegerArgumentType.getInteger(ctx, "count")
+                    serverOpsService.setMaxPlayers(count)
+                    context.locale.send(ctx.source.sender, "utility.maxplayers-set", "count" to count)
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            maxPlayersNode,
+            "Override displayed max player capacity",
+            emptyList()
+        )
+
+        // /serverlinks <list|add <label> <url>|remove <index>>
+        val serverLinksNode = Commands.literal("serverlinks")
+            .requires { it.sender.hasPermission("obsidian.command.serverlinks") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.literal("list").executes { ctx ->
+                    val sender = ctx.source.sender
+                    val links = Bukkit.getServer().serverLinks.links
+                    if (links.isEmpty()) {
+                        context.locale.send(sender, "utility.serverlinks-empty")
+                        return@executes Command.SINGLE_SUCCESS
+                    }
+                    context.locale.sendRaw(sender, "utility.serverlinks-header", "count" to links.size)
+                    links.forEachIndexed { idx, link ->
+                        context.locale.sendRaw(
+                            sender,
+                            "utility.serverlinks-entry",
+                            "index" to (idx + 1),
+                            "url" to link.url.toString(),
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).then(
+                Commands.literal("add").then(
+                    Commands.argument("label", StringArgumentType.word()).then(
+                        Commands.argument("url", StringArgumentType.greedyString()).executes { ctx ->
+                            val sender = ctx.source.sender
+                            val label = StringArgumentType.getString(ctx, "label")
+                            val rawUrl = StringArgumentType.getString(ctx, "url")
+                            val uri = runCatching { URI.create(rawUrl) }.getOrNull()
+                            if (uri == null || !uri.isAbsolute) {
+                                context.locale.send(sender, "utility.serverlinks-invalid-url", "url" to rawUrl)
+                                return@executes 0
+                            }
+                            context.scheduler.runGlobal {
+                                Bukkit.getServer().serverLinks.addLink(TextFormatter.format(label), uri)
+                                context.locale.send(
+                                    sender,
+                                    "utility.serverlinks-added",
+                                    "label" to label,
+                                    "url" to rawUrl
+                                )
+                            }
+                            Command.SINGLE_SUCCESS
+                        }
+                    )
+                )
+            ).then(
+                Commands.literal("remove").then(
+                    Commands.argument("index", IntegerArgumentType.integer(1)).executes { ctx ->
+                        val sender = ctx.source.sender
+                        val index = IntegerArgumentType.getInteger(ctx, "index") - 1
+                        context.scheduler.runGlobal {
+                            val links = Bukkit.getServer().serverLinks
+                            val current = links.links
+                            if (index !in current.indices) {
+                                context.locale.send(sender, "general.invalid-number", "input" to (index + 1).toString())
+                            } else {
+                                links.removeLink(current[index])
+                                context.locale.send(sender, "utility.serverlinks-removed", "index" to (index + 1))
+                            }
+                        }
+                        Command.SINGLE_SUCCESS
+                    }
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            serverLinksNode,
+            "Manage Paper ServerLinks pause-menu links",
+            emptyList()
+        )
+
+        // /fixchunk [radius]
+        val fixChunkNode = Commands.literal("fixchunk")
+            .requires { it.sender.hasPermission("obsidian.command.fixchunk") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                refreshNearbyChunks(player, 0)
+            }.then(
+                Commands.argument("radius", IntegerArgumentType.integer(0, 4)).executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    refreshNearbyChunks(player, IntegerArgumentType.getInteger(ctx, "radius"))
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            fixChunkNode,
+            "Refresh chunk packets around your location",
+            emptyList()
+        )
+
+        // /unloadchunks [world]
+        val unloadChunksNode = Commands.literal("unloadchunks")
+            .requires { it.sender.hasPermission("obsidian.command.unloadchunks") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val world =
+                    (ctx.source.sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                queueChunkUnloads(ctx.source.sender, world)
+            }.then(
+                Commands.argument("world", ArgumentTypes.world()).executes { ctx ->
+                    queueChunkUnloads(ctx.source.sender, ctx.getArgument("world", World::class.java))
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            unloadChunksNode,
+            "Request safe chunk unloading for idle chunks",
+            emptyList()
+        )
+
+        // /effect <target> <clear|give <effect> [seconds] [amplifier]>
+        val effectRegistry = RegistryAccess.registryAccess().getRegistry(RegistryKey.MOB_EFFECT)
+        val effectNode = Commands.literal("effect")
+            .requires { it.sender.hasPermission("obsidian.command.effect") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("target", ArgumentTypes.player()).then(
+                    Commands.literal("clear").executes { ctx ->
+                        val target =
+                            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        context.scheduler.runForEntity(target) {
+                            target.activePotionEffects.forEach { target.removePotionEffect(it.type) }
+                            context.locale.send(ctx.source.sender, "utility.effect-cleared", "target" to target.name)
+                        }
+                        Command.SINGLE_SUCCESS
+                    }
+                ).then(
+                    Commands.literal("give").then(
+                        Commands.argument("effect", StringArgumentType.word()).suggests { _, b ->
+                            effectRegistry.keyStream().map { it.key().value() }
+                                .filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                            b.buildFuture()
+                        }.executes { ctx ->
+                            applyPotionEffect(ctx.source.sender, ctx, 30, 0)
+                        }.then(
+                            Commands.argument("seconds", IntegerArgumentType.integer(1, 100000)).executes { ctx ->
+                                applyPotionEffect(
+                                    ctx.source.sender,
+                                    ctx,
+                                    IntegerArgumentType.getInteger(ctx, "seconds"),
+                                    0
+                                )
+                            }.then(
+                                Commands.argument("amplifier", IntegerArgumentType.integer(0, 255)).executes { ctx ->
+                                    applyPotionEffect(
+                                        ctx.source.sender,
+                                        ctx,
+                                        IntegerArgumentType.getInteger(ctx, "seconds"),
+                                        IntegerArgumentType.getInteger(ctx, "amplifier"),
+                                    )
+                                }
+                            )
+                        )
+                    )
+                )
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            effectNode,
+            "Give or clear potion effects on a player",
+            emptyList()
+        )
+
+        // /me <action...>
+        val meNode = Commands.literal("me")
+            .requires { it.sender.hasPermission("obsidian.command.me") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("action", StringArgumentType.greedyString()).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val action = StringArgumentType.getString(ctx, "action")
+                    val component = context.locale.component(
+                        "utility.me-format",
+                        mapOf("player" to sender.name, "action" to action),
+                    )
+                    Bukkit.broadcast(component)
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, meNode, "Broadcast an emote action message", emptyList())
+
+        // /suicide
+        val suicideNode = Commands.literal("suicide")
+            .requires { it.sender.hasPermission("obsidian.command.suicide") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                context.scheduler.runForEntity(player) {
+                    player.health = 0.0
+                    context.locale.send(player, "utility.suicide-done")
+                }
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(context.plugin.pluginMeta, suicideNode, "Kill yourself immediately", emptyList())
+
+        // /giveall <material> [amount]
+        val giveAllNode = Commands.literal("giveall")
+            .requires { it.sender.hasPermission("obsidian.command.giveall") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("material", StringArgumentType.word()).suggests { _, b ->
+                    Material.entries.filter { it.isItem && it.name.startsWith(b.remaining, true) }
+                        .take(25).forEach { b.suggest(it.name.lowercase()) }
+                    b.buildFuture()
+                }.executes { ctx ->
+                    executeGiveAll(ctx.source.sender, StringArgumentType.getString(ctx, "material"), 1)
+                }.then(
+                    Commands.argument("amount", IntegerArgumentType.integer(1, 2304)).executes { ctx ->
+                        executeGiveAll(
+                            ctx.source.sender,
+                            StringArgumentType.getString(ctx, "material"),
+                            IntegerArgumentType.getInteger(ctx, "amount"),
+                        )
+                    }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, giveAllNode, "Give an item to all online players", emptyList())
+
+        // /donate
+        val donateNode = Commands.literal("donate")
+            .requires { it.sender.hasPermission("obsidian.command.donate") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                val lines = serverOpsService.donateLines
+                if (lines.isEmpty()) {
+                    context.locale.send(sender, "utility.donate-empty")
+                } else {
+                    lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
+                }
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            donateNode,
+            "Display server donation and store links",
+            emptyList()
+        )
+
+        // /recipe [material]
+        val recipeNode = Commands.literal("recipe")
+            .requires { it.sender.hasPermission("obsidian.command.recipe") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val held = player.inventory.itemInMainHand
+                if (held.type.isAir) {
+                    context.locale.send(player, "utility.item-required")
+                    return@executes 0
+                }
+                showRecipes(player, held)
+            }.then(
+                Commands.argument("material", StringArgumentType.word()).suggests { _, b ->
+                    Material.entries.filter { it.isItem && it.name.startsWith(b.remaining, true) }
+                        .take(25).forEach { b.suggest(it.name.lowercase()) }
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val matName = StringArgumentType.getString(ctx, "material")
+                    val mat = Material.matchMaterial(matName)
+                    if (mat == null || !mat.isItem) {
+                        context.locale.send(ctx.source.sender, "utility.invalid-material", "input" to matName)
+                        return@executes 0
+                    }
+                    showRecipes(ctx.source.sender, ItemStack(mat))
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            recipeNode,
+            "Look up crafting and smelting recipes for an item",
+            emptyList()
+        )
+
+        // /colors
+        val colorsNode = Commands.literal("colors")
+            .requires { it.sender.hasPermission("obsidian.command.colors") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sender = ctx.source.sender
+                context.locale.sendRaw(sender, "utility.colors-header")
+                sender.sendMessage(
+                    TextFormatter.format(
+                        "&0&0 &1&1 &2&2 &3&3 &4&4 &5&5 &6&6 &7&7 &8&8 &9&9 &a&a &b&b &c&c &d&d &e&e &f&f"
+                    )
+                )
+                sender.sendMessage(
+                    TextFormatter.format(
+                        "&r&l&l Bold&r &o&o Italic&r &n&n Underline&r &m&m Strike&r &k&k &7(&kObfuscated&7)"
+                    )
+                )
+                sender.sendMessage(Component.text("MiniMessage: <gradient:#55FFFF:#FF55FF>Example</gradient> | <#AABBCC>Hex"))
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            colorsNode,
+            "Display Minecraft chat color and formatting chart",
+            emptyList()
+        )
+
+        // /solve <expression...>
+        val solveNode = Commands.literal("solve")
+            .requires { it.sender.hasPermission("obsidian.command.solve") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("expression", StringArgumentType.greedyString()).executes { ctx ->
+                    val sender = ctx.source.sender
+                    val expr = StringArgumentType.getString(ctx, "expression")
+                    val result = runCatching { ServerOpsService.solveMathExpression(expr) }
+                    result.onSuccess { v ->
+                        val formatted = if (v % 1.0 == 0.0 && kotlin.math.abs(v) < 1e12) {
+                            v.toLong().toString()
+                        } else {
+                            String.format("%.6f", v).trimEnd('0').trimEnd('.')
+                        }
+                        context.locale.send(sender, "utility.solve-result", "expression" to expr, "result" to formatted)
+                    }.onFailure { err ->
+                        context.locale.send(
+                            sender,
+                            "utility.solve-error",
+                            "error" to (err.message ?: "Invalid expression")
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, solveNode, "Evaluate a mathematical expression", listOf("calc"))
+    }
+
+    private fun applyWorldWeather(sender: CommandSender, type: String, seconds: Int): Int {
+        val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return 0
+        val ticks = seconds * 20
+        val normalized = type.lowercase()
+        context.scheduler.runGlobal {
+            when (normalized) {
+                "sun", "clear" -> {
+                    world.setStorm(false)
+                    world.isThundering = false
+                    world.weatherDuration = ticks
+                }
+
+                "rain", "storm" -> {
+                    world.setStorm(true)
+                    world.isThundering = false
+                    world.weatherDuration = ticks
+                }
+
+                "thunder" -> {
+                    world.setStorm(true)
+                    world.isThundering = true
+                    world.weatherDuration = ticks
+                    world.thunderDuration = ticks
+                }
+
+                else -> {
+                    context.locale.send(sender, "utility.weather-invalid", "type" to type)
+                    return@runGlobal
+                }
+            }
+            context.locale.send(
+                sender,
+                "utility.weather-set",
+                "world" to world.name,
+                "type" to normalized,
+                "seconds" to seconds
+            )
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun applyWorldTime(sender: CommandSender, ticks: Long, relative: Boolean): Int {
+        val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return 0
+        context.scheduler.runGlobal {
+            val newTime = if (relative) world.time + ticks else ticks
+            world.time = newTime
+            context.locale.send(sender, "utility.time-set", "world" to world.name, "time" to world.time)
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun refreshNearbyChunks(player: Player, radius: Int): Int {
+        val center = player.location
+        val world = center.world ?: return 0
+        val cx = center.chunk.x
+        val cz = center.chunk.z
+        var refreshed = 0
+        for (dx in -radius..radius) {
+            for (dz in -radius..radius) {
+                if (world.refreshChunk(cx + dx, cz + dz)) refreshed++
+            }
+        }
+        context.locale.send(player, "utility.fixchunk-done", "count" to refreshed)
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun queueChunkUnloads(sender: CommandSender, world: World): Int {
+        context.scheduler.runGlobal {
+            var requested = 0
+            for (chunk in world.loadedChunks) {
+                if (!chunk.isForceLoaded && chunk.entities.none { it is Player }) {
+                    if (world.unloadChunkRequest(chunk.x, chunk.z)) requested++
+                }
+            }
+            context.locale.send(sender, "utility.unloadchunks-done", "world" to world.name, "count" to requested)
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun applyPotionEffect(
+        sender: CommandSender,
+        ctx: com.mojang.brigadier.context.CommandContext<io.papermc.paper.command.brigadier.CommandSourceStack>,
+        seconds: Int,
+        amplifier: Int,
+    ): Int {
+        val target =
+            ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java).resolve(ctx.source).firstOrNull()
+                ?: return 0
+        val rawEffect = StringArgumentType.getString(ctx, "effect").lowercase()
+        val key = if (rawEffect.contains(':')) Key.key(rawEffect) else Key.key("minecraft", rawEffect)
+        val registry = RegistryAccess.registryAccess().getRegistry(RegistryKey.MOB_EFFECT)
+        val type = registry.get(key)
+        if (type == null) {
+            context.locale.send(sender, "utility.effect-invalid", "effect" to rawEffect)
+            return 0
+        }
+        context.scheduler.runForEntity(target) {
+            target.addPotionEffect(PotionEffect(type, seconds * 20, amplifier, true, true, true))
+            context.locale.send(
+                sender,
+                "utility.effect-given",
+                "target" to target.name,
+                "effect" to key.value(),
+                "seconds" to seconds,
+                "level" to (amplifier + 1),
+            )
+        }
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun executeGiveAll(sender: CommandSender, matInput: String, amount: Int): Int {
+        val mat = Material.matchMaterial(matInput)
+        if (mat == null || !mat.isItem) {
+            context.locale.send(sender, "utility.invalid-material", "input" to matInput)
+            return 0
+        }
+        val players = Bukkit.getOnlinePlayers()
+        for (target in players) {
+            context.scheduler.runForEntity(target) {
+                val stack = ItemStack(mat, amount.coerceIn(1, mat.maxStackSize * 36))
+                val overflow = target.inventory.addItem(stack)
+                overflow.values.forEach { target.world.dropItemNaturally(target.location, it) }
+            }
+        }
+        context.locale.send(
+            sender,
+            "utility.giveall-done",
+            "amount" to amount,
+            "material" to mat.name.lowercase(),
+            "count" to players.size
+        )
+        return Command.SINGLE_SUCCESS
+    }
+
+    private fun showRecipes(sender: CommandSender, stack: ItemStack): Int {
+        val lines = serverOpsService.describeRecipes(stack)
+        if (lines.isEmpty()) {
+            context.locale.send(sender, "utility.recipe-none", "item" to stack.type.name.lowercase())
+            return Command.SINGLE_SUCCESS
+        }
+        context.locale.sendRaw(sender, "utility.recipe-header", "item" to stack.type.name.lowercase())
+        lines.forEach { sender.sendMessage(Component.text(it)) }
+        return Command.SINGLE_SUCCESS
     }
 }

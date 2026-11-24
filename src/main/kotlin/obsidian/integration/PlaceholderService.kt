@@ -9,6 +9,7 @@ import obsidian.modules.economy.EconomyService
 import obsidian.modules.home.HomeService
 import obsidian.modules.moderation.ModerationService
 import obsidian.modules.playtime.RankService
+import obsidian.modules.playtime.VoteService
 import org.bukkit.Bukkit
 import org.bukkit.OfflinePlayer
 import org.bukkit.entity.Player
@@ -30,9 +31,25 @@ class PlaceholderService(private val context: ObsidianContext) {
         val mod = context.getService<ModerationService>()
         val chat = context.getService<ChatService>()
         val afk = context.getService<AfkService>()
+        val votes = context.getService<VoteService>()
         val lp = context.getService<LuckPermsHook>()
 
-        return when (key.lowercase()) {
+        val lower = key.lowercase()
+        if (lower.startsWith("votetop_")) {
+            val parts = lower.split('_')
+            val rank = parts.getOrNull(1)?.toIntOrNull()
+            val field = parts.getOrNull(2)
+            if (rank != null && rank in 1..10 && votes != null) {
+                val entry = votes.getTopVotes(10, 0).getOrNull(rank - 1)
+                return when (field) {
+                    "name" -> entry?.username ?: "-"
+                    "votes" -> entry?.voteCount?.toString() ?: "0"
+                    else -> null
+                }
+            }
+        }
+
+        return when (lower) {
             "online" -> {
                 val visibleCount = Bukkit.getOnlinePlayers().count { p -> mod == null || !mod.isVanished(p.uniqueId) }
                 visibleCount.toString()
@@ -72,6 +89,7 @@ class PlaceholderService(private val context: ObsidianContext) {
             "jailed" -> if (uuid != null && mod != null) (mod.getActiveJail(uuid) != null).toString() else "false"
             "god" -> if (uuid != null) (context.users.getCached(uuid)?.godMode ?: false).toString() else "false"
             "afk" -> if (uuid != null && afk != null) afk.isAfk(uuid).toString() else "false"
+            "votes" -> if (uuid != null && votes != null) votes.getVoteCount(uuid).toString() else "0"
             "prefix" -> if (online != null && lp != null) lp.getPrefix(online) else ""
             "suffix" -> if (online != null && lp != null) lp.getSuffix(online) else ""
             "luckperms_group" -> (if (online != null && lp != null) lp.getPrimaryGroup(online) else null) ?: ""

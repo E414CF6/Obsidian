@@ -197,6 +197,64 @@ class DatabaseManager(
                     );
                     """.trimIndent()
                 )
+                val chatTable = table("chat_profiles")
+                ensureColumn(st, chatTable, "chat_color", "VARCHAR(64)")
+                ensureColumn(st, chatTable, "silence_chat", "BOOLEAN NOT NULL DEFAULT FALSE")
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("votes")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `username` VARCHAR(32) NOT NULL DEFAULT '',
+                        `vote_count` BIGINT NOT NULL DEFAULT 0,
+                        `last_vote_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("deliveries")}` (
+                        `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `target_uuid` VARCHAR(36) NOT NULL,
+                        `sender_name` VARCHAR(64) NOT NULL,
+                        `item_base64` $longTextType,
+                        `message` $longTextType NOT NULL,
+                        `created_at` BIGINT NOT NULL DEFAULT 0,
+                        `expires_at` BIGINT,
+                        `claimed_at` BIGINT
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("spawner_charges")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `charges` INT NOT NULL DEFAULT 0,
+                        `last_updated` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("player_alerts")}` (
+                        `uuid` VARCHAR(36) NOT NULL PRIMARY KEY,
+                        `username` VARCHAR(32) NOT NULL DEFAULT '',
+                        `added_by` VARCHAR(32) NOT NULL,
+                        `reason` $longTextType NOT NULL,
+                        `created_at` BIGINT NOT NULL DEFAULT 0
+                    );
+                    """.trimIndent()
+                )
+                st.executeUpdate(
+                    """
+                    CREATE TABLE IF NOT EXISTS `${table("ip_locks")}` (
+                        `uuid` VARCHAR(36) NOT NULL,
+                        `ip` VARCHAR(64) NOT NULL,
+                        `added_by` VARCHAR(32) NOT NULL,
+                        `created_at` BIGINT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (`uuid`, `ip`)
+                    );
+                    """.trimIndent()
+                )
                 val autoIncId = when (dialect) {
                     DatabaseDialect.SQLITE -> "INTEGER PRIMARY KEY AUTOINCREMENT"
                     DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> "BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY"
@@ -333,6 +391,12 @@ class DatabaseManager(
                     )
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_messages_actor` ON `${table("protect_messages")}` (`actor`, `time`);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}votes_count` ON `${table("votes")}` (`vote_count` DESC);"
+                    )
+                    st.executeUpdate(
+                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}deliveries_target` ON `${table("deliveries")}` (`target_uuid`, `claimed_at`, `created_at`);"
                     )
                 }
             }

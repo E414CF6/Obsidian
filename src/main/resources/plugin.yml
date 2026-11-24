@@ -32,6 +32,33 @@ permissions:
   obsidian.chat.color:
     description: Allows color/MiniMessage codes in chat
     default: op
+  obsidian.chat.item:
+    description: Allows showcasing held/equipped items via [item] in chat
+    default: true
+  obsidian.chat.delete:
+    description: Allows deleting signed chat messages
+    default: op
+  obsidian.chat.slowmode.bypass:
+    description: Bypasses global chat slowmode
+    default: op
+  obsidian.spawner.silktouch:
+    description: Allows mining spawners with Silk Touch using spawner charges
+    default: true
+  obsidian.spawner.charges.bypass:
+    description: Allows mining spawners without consuming charges
+    default: op
+  obsidian.combat.bypass:
+    description: Bypasses combat tag restrictions and logout penalties
+    default: op
+  obsidian.anvil.color:
+    description: Allows MiniMessage/color codes when renaming items in an anvil
+    default: op
+  obsidian.anvil.freerename:
+    description: Allows renaming items in an anvil without XP level cost
+    default: op
+  obsidian.command.enchant.unsafe:
+    description: Allows enchanting items above max vanilla levels or on any item
+    default: op
   obsidian.chat.bypassfilter:
     description: Bypasses chat anti-spam, caps, and word filters
     default: op
@@ -138,3 +165,15 @@ permissions:
       obsidian.mobfarm.build.*: true
       obsidian.command.mobclean: true
       obsidian.command.mobreport: true
+  obsidian.moderation.alert:
+    description: Grants permission to manage and receive staff join alerts
+    default: op
+  obsidian.moderation.lockip:
+    description: Grants permission to lock accounts to specific IP addresses
+    default: op
+  obsidian.teleport.bypass:
+    description: Grants permission to bypass safe teleport adjustments via /tpbypass
+    default: op
+  obsidian.painting.cycle:
+    description: Allows shift-right-clicking paintings to cycle art variants
+    default: op

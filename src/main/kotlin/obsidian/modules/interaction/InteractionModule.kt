@@ -26,18 +26,21 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
     val icService = InteractiveCommandService(context)
     val attachedService = AttachedCommandService(context)
     val armorEffectService = ArmorEffectService(context)
+    val nameplateService = NameplateService(context)
 
     override fun onEnable() {
         context.registerService(seatService)
         context.registerService(icService)
         context.registerService(attachedService)
         context.registerService(armorEffectService)
+        context.registerService(nameplateService)
         armorEffectService.start()
     }
 
     override fun onDisable() {
         seatService.shutdownAll()
         armorEffectService.stop()
+        nameplateService.shutdown()
     }
 
     override fun onReload() {
@@ -50,6 +53,7 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
         icService,
         attachedService,
         armorEffectService,
+        nameplateService,
     )
 
     override fun registerCommands(registrar: Commands) {
@@ -58,6 +62,7 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
         registerInteractiveCommands(registrar)
         registerAttachedCommands(registrar)
         registerArmorEffectsCommands(registrar)
+        registerNameplateAndNoTargetCommands(registrar)
     }
 
     private fun registerSitAndRide(registrar: Commands) {
@@ -347,5 +352,148 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
             "Manage armor effect rules",
             listOf("armoreffect"),
         )
+    }
+
+    private fun registerNameplateAndNoTargetCommands(registrar: Commands) {
+        val nameplateNode = Commands.literal("nameplate")
+            .requires { it.sender.hasPermission("obsidian.command.nameplate") || it.sender.hasPermission("obsidian.admin") }
+            .then(Commands.literal("reset").executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                nameplateService.resetNameplate(player)
+                context.locale.send(player, "interaction.nameplate-reset", "target" to player.name)
+                Command.SINGLE_SUCCESS
+            }.then(Commands.argument("target", ArgumentTypes.player()).executes { ctx ->
+                val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                    .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                nameplateService.resetNameplate(target)
+                context.locale.send(ctx.source.sender, "interaction.nameplate-reset", "target" to target.name)
+                Command.SINGLE_SUCCESS
+            }))
+            .then(
+                Commands.literal("prefix")
+                    .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val raw = StringArgumentType.getString(ctx, "value")
+                        nameplateService.setPrefix(player, raw)
+                        context.locale.send(
+                            player,
+                            "interaction.nameplate-updated",
+                            "field" to "prefix",
+                            "target" to player.name
+                        )
+                        Command.SINGLE_SUCCESS
+                    })
+            )
+            .then(
+                Commands.literal("suffix")
+                    .then(Commands.argument("value", StringArgumentType.greedyString()).executes { ctx ->
+                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                        val raw = StringArgumentType.getString(ctx, "value")
+                        nameplateService.setSuffix(player, raw)
+                        context.locale.send(
+                            player,
+                            "interaction.nameplate-updated",
+                            "field" to "suffix",
+                            "target" to player.name
+                        )
+                        Command.SINGLE_SUCCESS
+                    })
+            )
+            .then(
+                Commands.literal("color").then(Commands.argument("color", StringArgumentType.word()).suggests { _, b ->
+                    listOf("reset", "white", "gray", "aqua", "green", "yellow", "gold", "red", "light_purple")
+                        .filter { it.startsWith(b.remaining, true) }
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val colorStr = StringArgumentType.getString(ctx, "color")
+                    val parsed = NameplateService.parseNamedColor(colorStr)
+                    if (parsed == null && !colorStr.equals("reset", true) && !colorStr.equals(
+                            "clear",
+                            true
+                        ) && !colorStr.equals("off", true)
+                    ) {
+                        context.locale.send(player, "interaction.nameplate-invalid-color", "color" to colorStr)
+                        return@executes 0
+                    }
+                    nameplateService.setColor(player, parsed)
+                    context.locale.send(
+                        player,
+                        "interaction.nameplate-updated",
+                        "field" to "color",
+                        "target" to player.name
+                    )
+                    Command.SINGLE_SUCCESS
+                })
+            )
+            .build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            nameplateNode,
+            "Customize overhead nameplate prefix, suffix, and color",
+            emptyList()
+        )
+
+        val collisionNode = Commands.literal("playercollision")
+            .requires { it.sender.hasPermission("obsidian.command.playercollision") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val next = !nameplateService.isCollisionEnabled(player.uniqueId)
+                nameplateService.setCollision(player, next)
+                val state = context.locale.raw(if (next) "general.state-on" else "general.state-off")
+                context.locale.send(player, "interaction.collision-toggled", "target" to player.name, "state" to state)
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("mode", StringArgumentType.word()).suggests { _, b ->
+                    listOf("on", "off", "toggle").filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val mode = StringArgumentType.getString(ctx, "mode").lowercase()
+                    val next = when (mode) {
+                        "on", "true" -> true
+                        "off", "false" -> false
+                        else -> !nameplateService.isCollisionEnabled(player.uniqueId)
+                    }
+                    nameplateService.setCollision(player, next)
+                    val state = context.locale.raw(if (next) "general.state-on" else "general.state-off")
+                    context.locale.send(
+                        player,
+                        "interaction.collision-toggled",
+                        "target" to player.name,
+                        "state" to state
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, collisionNode, "Toggle player collision rule", emptyList())
+
+        val noTargetNode = Commands.literal("notarget")
+            .requires { it.sender.hasPermission("obsidian.command.notarget") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val enabled = nameplateService.toggleNoTarget(player.uniqueId)
+                val state = context.locale.raw(if (enabled) "general.state-on" else "general.state-off")
+                context.locale.send(player, "interaction.notarget-toggled", "target" to player.name, "state" to state)
+                Command.SINGLE_SUCCESS
+            }.then(
+                Commands.argument("target", ArgumentTypes.player())
+                    .requires { it.sender.hasPermission("obsidian.command.notarget.others") || it.sender.hasPermission("obsidian.admin") }
+                    .executes { ctx ->
+                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                        val enabled = nameplateService.toggleNoTarget(target.uniqueId)
+                        val state = context.locale.raw(if (enabled) "general.state-on" else "general.state-off")
+                        context.locale.send(
+                            ctx.source.sender,
+                            "interaction.notarget-toggled",
+                            "target" to target.name,
+                            "state" to state
+                        )
+                        Command.SINGLE_SUCCESS
+                    }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, noTargetNode, "Toggle mob targeting immunity", emptyList())
     }
 }

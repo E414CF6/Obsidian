@@ -27,7 +27,10 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
         "Chat formatting, anti-spam filter, messaging, nicknames, TabList, and custom text"
 
     val filterService = ChatFilterService(context)
-    val chatService = ChatService(context, filterService)
+    val chatBubbleService = ChatBubbleService(context)
+    val chatService = ChatService(context, filterService).apply {
+        chatBubbleService = this@ChatModule.chatBubbleService
+    }
     val tabListService = TabListService(context)
     val deathMessageService = DeathMessageService(context)
     val customTextService = CustomTextService(context)
@@ -36,6 +39,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
 
     override fun onEnable() {
         context.registerService(chatService)
+        context.registerService(chatBubbleService)
         context.registerService(notificationService)
         mailService.load()
         val interval = tabListService.updateIntervalSeconds
@@ -45,11 +49,13 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
     }
 
     override fun onDisable() {
+        chatBubbleService.shutdown()
         mailService.save()
     }
 
     override fun onReload() {
         filterService.reload()
+        chatBubbleService.reload()
         chatService.reload()
         tabListService.reload()
         deathMessageService.reload()
@@ -58,7 +64,8 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
         tabListService.updateAll()
     }
 
-    override fun listeners(): List<Listener> = listOf(chatService, tabListService, deathMessageService, mailService)
+    override fun listeners(): List<Listener> =
+        listOf(chatService, chatBubbleService, tabListService, deathMessageService, mailService)
 
     override fun registerCommands(registrar: Commands) {
         registerPrivateMessaging(registrar)
@@ -209,6 +216,140 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             clearChatNode,
             "Clear chat history for players",
             listOf("cc"),
+        )
+
+        val slowmodeNode = Commands.literal("slowmode")
+            .requires { it.sender.hasPermission("obsidian.command.slowmode") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val sec = chatService.slowmodeSeconds
+                if (sec <= 0) {
+                    context.locale.send(ctx.source.sender, "chat.slowmode-off")
+                } else {
+                    context.locale.send(ctx.source.sender, "chat.slowmode-status", "seconds" to sec)
+                }
+                Command.SINGLE_SUCCESS
+            }
+            .then(
+                Commands.literal("off").executes { ctx ->
+                    chatService.slowmodeSeconds = 0
+                    Bukkit.broadcast(
+                        TextFormatter.format(
+                            context.locale.raw("chat.slowmode-disabled"),
+                            mapOf("actor" to ctx.source.sender.name)
+                        )
+                    )
+                    Command.SINGLE_SUCCESS
+                }
+            )
+            .then(
+                Commands.argument("seconds", IntegerArgumentType.integer(0, 3600)).executes { ctx ->
+                    val sec = IntegerArgumentType.getInteger(ctx, "seconds")
+                    chatService.slowmodeSeconds = sec
+                    if (sec == 0) {
+                        Bukkit.broadcast(
+                            TextFormatter.format(
+                                context.locale.raw("chat.slowmode-disabled"),
+                                mapOf("actor" to ctx.source.sender.name)
+                            )
+                        )
+                    } else {
+                        Bukkit.broadcast(
+                            TextFormatter.format(
+                                context.locale.raw("chat.slowmode-enabled"),
+                                mapOf("actor" to ctx.source.sender.name, "seconds" to sec.toString()),
+                            )
+                        )
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(context.plugin.pluginMeta, slowmodeNode, "Set global chat slowmode interval", emptyList())
+
+        val chatColorNode = Commands.literal("chatcolor")
+            .requires { it.sender.hasPermission("obsidian.command.chatcolor") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("color", StringArgumentType.word()).suggests { _, b ->
+                    listOf(
+                        "reset",
+                        "white",
+                        "gray",
+                        "aqua",
+                        "green",
+                        "yellow",
+                        "gold",
+                        "red",
+                        "light_purple",
+                        "#ff55aa"
+                    )
+                        .filter { it.startsWith(b.remaining, true) }
+                        .forEach(b::suggest)
+                    b.buildFuture()
+                }.executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    val applied = chatService.setChatColor(player.uniqueId, StringArgumentType.getString(ctx, "color"))
+                    if (applied == null) {
+                        context.locale.send(player, "chat.chatcolor-reset", "target" to player.name)
+                    } else {
+                        context.locale.send(player, "chat.chatcolor-set", "target" to player.name, "color" to applied)
+                    }
+                    Command.SINGLE_SUCCESS
+                }.then(
+                    Commands.argument("target", ArgumentTypes.player())
+                        .requires {
+                            it.sender.hasPermission("obsidian.command.chatcolor.others") || it.sender.hasPermission(
+                                "obsidian.admin"
+                            )
+                        }
+                        .executes { ctx ->
+                            val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                                .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                            val applied =
+                                chatService.setChatColor(target.uniqueId, StringArgumentType.getString(ctx, "color"))
+                            if (applied == null) {
+                                context.locale.send(ctx.source.sender, "chat.chatcolor-reset", "target" to target.name)
+                            } else {
+                                context.locale.send(
+                                    ctx.source.sender,
+                                    "chat.chatcolor-set",
+                                    "target" to target.name,
+                                    "color" to applied
+                                )
+                            }
+                            Command.SINGLE_SUCCESS
+                        }
+                )
+            ).build()
+        registrar.register(context.plugin.pluginMeta, chatColorNode, "Set persistent chat color", emptyList())
+
+        val silenceNode = Commands.literal("silence")
+            .requires { it.sender.hasPermission("obsidian.command.silence") || it.sender.hasPermission("obsidian.admin") }
+            .executes { ctx ->
+                val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                val silenced = chatService.toggleSilence(player)
+                val state = context.locale.raw(if (silenced) "general.state-on" else "general.state-off")
+                context.locale.send(player, "chat.silence-toggled", "state" to state)
+                Command.SINGLE_SUCCESS
+            }.build()
+        registrar.register(context.plugin.pluginMeta, silenceNode, "Toggle receiving public chat messages", emptyList())
+
+        val chatDeleteNode = Commands.literal("chatdelete")
+            .requires { it.sender.hasPermission("obsidian.chat.delete") || it.sender.hasPermission("obsidian.admin") }
+            .then(
+                Commands.argument("id", StringArgumentType.word()).executes { ctx ->
+                    val id = StringArgumentType.getString(ctx, "id")
+                    if (chatService.deleteRecordedMessage(id)) {
+                        context.locale.send(ctx.source.sender, "chat.delete-success")
+                    } else {
+                        context.locale.send(ctx.source.sender, "chat.delete-not-found")
+                    }
+                    Command.SINGLE_SUCCESS
+                }
+            ).build()
+        registrar.register(
+            context.plugin.pluginMeta,
+            chatDeleteNode,
+            "Delete a signed chat message for all players",
+            emptyList()
         )
     }
 

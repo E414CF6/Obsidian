@@ -106,7 +106,48 @@ data class ChatProfileRecord(
     val nickname: String? = null,
     val msgToggle: Boolean = true,
     val socialSpy: Boolean = false,
+    val chatColor: String? = null,
+    val silenceChat: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
+)
+
+data class VoteRecord(
+    val uuid: UUID,
+    val username: String,
+    val voteCount: Long = 0L,
+    val lastVoteAt: Long = 0L,
+)
+
+data class DeliveryRecord(
+    val id: String,
+    val targetUuid: UUID,
+    val senderName: String,
+    val itemBase64: String? = null,
+    val message: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val expiresAt: Long? = null,
+    val claimedAt: Long? = null,
+)
+
+data class SpawnerChargeRecord(
+    val uuid: UUID,
+    val charges: Int = 0,
+    val lastUpdated: Long = System.currentTimeMillis(),
+)
+
+data class AlertRecord(
+    val uuid: UUID,
+    val username: String,
+    val addedBy: String,
+    val reason: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
+data class IpLockRecord(
+    val uuid: UUID,
+    val ip: String,
+    val addedBy: String,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 // --- Repositories ---
@@ -1053,6 +1094,16 @@ class SavedInventoryRepository(private val db: DatabaseManager) {
             }
     }
 
+    suspend fun deleteByNameOrId(ownerUuid: UUID, nameOrId: String): Boolean = db.query { conn ->
+        conn.prepareStatement("DELETE FROM `$table` WHERE `id` = ? OR (`owner_uuid` = ? AND LOWER(`name`) = LOWER(?));")
+            .use { ps ->
+                ps.setString(1, nameOrId)
+                ps.setString(2, ownerUuid.toString())
+                ps.setString(3, nameOrId)
+                ps.executeUpdate() > 0
+            }
+    }
+
     private fun mapRecord(rs: ResultSet): SavedInventoryRecord = SavedInventoryRecord(
         id = rs.getString("id"),
         ownerUuid = UUID.fromString(rs.getString("owner_uuid")),
@@ -1076,6 +1127,8 @@ class ChatProfileRepository(private val db: DatabaseManager) {
                         nickname = rs.getString("nickname"),
                         msgToggle = rs.getBoolean("msg_toggle"),
                         socialSpy = rs.getBoolean("social_spy"),
+                        chatColor = rs.getString("chat_color"),
+                        silenceChat = rs.getBoolean("silence_chat"),
                         updatedAt = rs.getLong("updated_at"),
                     )
                 } else null
@@ -1086,22 +1139,26 @@ class ChatProfileRepository(private val db: DatabaseManager) {
     suspend fun upsert(record: ChatProfileRecord) {
         val sql = when (db.dialect) {
             DatabaseDialect.SQLITE -> """
-                INSERT INTO `$table` (`uuid`, `nickname`, `msg_toggle`, `social_spy`, `updated_at`)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO `$table` (`uuid`, `nickname`, `msg_toggle`, `social_spy`, `chat_color`, `silence_chat`, `updated_at`)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(`uuid`) DO UPDATE SET
                     `nickname` = excluded.`nickname`,
                     `msg_toggle` = excluded.`msg_toggle`,
                     `social_spy` = excluded.`social_spy`,
+                    `chat_color` = excluded.`chat_color`,
+                    `silence_chat` = excluded.`silence_chat`,
                     `updated_at` = excluded.`updated_at`;
             """.trimIndent()
 
             DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
-                INSERT INTO `$table` (`uuid`, `nickname`, `msg_toggle`, `social_spy`, `updated_at`)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO `$table` (`uuid`, `nickname`, `msg_toggle`, `social_spy`, `chat_color`, `silence_chat`, `updated_at`)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE
                     `nickname` = VALUES(`nickname`),
                     `msg_toggle` = VALUES(`msg_toggle`),
                     `social_spy` = VALUES(`social_spy`),
+                    `chat_color` = VALUES(`chat_color`),
+                    `silence_chat` = VALUES(`silence_chat`),
                     `updated_at` = VALUES(`updated_at`);
             """.trimIndent()
         }
@@ -1111,9 +1168,354 @@ class ChatProfileRepository(private val db: DatabaseManager) {
                 ps.setString(2, record.nickname)
                 ps.setBoolean(3, record.msgToggle)
                 ps.setBoolean(4, record.socialSpy)
-                ps.setLong(5, record.updatedAt)
+                ps.setString(5, record.chatColor)
+                ps.setBoolean(6, record.silenceChat)
+                ps.setLong(7, record.updatedAt)
                 ps.executeUpdate()
             }
+        }
+    }
+}
+
+class VoteRepository(private val db: DatabaseManager) {
+
+    private val table = db.table("votes")
+
+    suspend fun findByUuid(uuid: UUID): VoteRecord? = db.query { conn ->
+        conn.prepareStatement("SELECT * FROM `$table` WHERE `uuid` = ? LIMIT 1;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeQuery().use { rs ->
+                if (rs.next()) mapVote(rs) else null
+            }
+        }
+    }
+
+    suspend fun findAll(): List<VoteRecord> = db.query { conn ->
+        val out = mutableListOf<VoteRecord>()
+        conn.prepareStatement("SELECT * FROM `$table` ORDER BY `vote_count` DESC;").use { ps ->
+            ps.executeQuery().use { rs ->
+                while (rs.next()) out += mapVote(rs)
+            }
+        }
+        out
+    }
+
+    suspend fun topVotes(limit: Int, offset: Int = 0): List<VoteRecord> = db.query { conn ->
+        val out = mutableListOf<VoteRecord>()
+        conn.prepareStatement("SELECT * FROM `$table` WHERE `vote_count` > 0 ORDER BY `vote_count` DESC LIMIT ? OFFSET ?;")
+            .use { ps ->
+                ps.setInt(1, limit)
+                ps.setInt(2, offset)
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) out += mapVote(rs)
+                }
+            }
+        out
+    }
+
+    suspend fun upsert(record: VoteRecord) {
+        val sql = when (db.dialect) {
+            DatabaseDialect.SQLITE -> """
+                INSERT INTO `$table` (`uuid`, `username`, `vote_count`, `last_vote_at`)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(`uuid`) DO UPDATE SET
+                    `username` = excluded.`username`,
+                    `vote_count` = excluded.`vote_count`,
+                    `last_vote_at` = excluded.`last_vote_at`;
+            """.trimIndent()
+
+            DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
+                INSERT INTO `$table` (`uuid`, `username`, `vote_count`, `last_vote_at`)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    `username` = VALUES(`username`),
+                    `vote_count` = VALUES(`vote_count`),
+                    `last_vote_at` = VALUES(`last_vote_at`);
+            """.trimIndent()
+        }
+        db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, record.uuid.toString())
+                ps.setString(2, record.username)
+                ps.setLong(3, record.voteCount)
+                ps.setLong(4, record.lastVoteAt)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    private fun mapVote(rs: ResultSet): VoteRecord = VoteRecord(
+        uuid = UUID.fromString(rs.getString("uuid")),
+        username = rs.getString("username"),
+        voteCount = rs.getLong("vote_count"),
+        lastVoteAt = rs.getLong("last_vote_at"),
+    )
+}
+
+class DeliveryRepository(private val db: DatabaseManager) {
+
+    private val table = db.table("deliveries")
+
+    suspend fun insert(record: DeliveryRecord) {
+        db.query { conn ->
+            conn.prepareStatement(
+                "INSERT INTO `$table` (`id`, `target_uuid`, `sender_name`, `item_base64`, `message`, `created_at`, `expires_at`, `claimed_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?);"
+            ).use { ps ->
+                ps.setString(1, record.id)
+                ps.setString(2, record.targetUuid.toString())
+                ps.setString(3, record.senderName)
+                ps.setString(4, record.itemBase64)
+                ps.setString(5, record.message)
+                ps.setLong(6, record.createdAt)
+                if (record.expiresAt != null) ps.setLong(7, record.expiresAt) else ps.setNull(7, Types.BIGINT)
+                if (record.claimedAt != null) ps.setLong(8, record.claimedAt) else ps.setNull(8, Types.BIGINT)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun findPending(targetUuid: UUID, now: Long = System.currentTimeMillis()): List<DeliveryRecord> =
+        db.query { conn ->
+            val out = mutableListOf<DeliveryRecord>()
+            conn.prepareStatement(
+                "SELECT * FROM `$table` WHERE `target_uuid` = ? AND `claimed_at` IS NULL AND (`expires_at` IS NULL OR `expires_at` > ?) ORDER BY `created_at` ASC;"
+            ).use { ps ->
+                ps.setString(1, targetUuid.toString())
+                ps.setLong(2, now)
+                ps.executeQuery().use { rs ->
+                    while (rs.next()) out += mapDelivery(rs)
+                }
+            }
+            out
+        }
+
+    suspend fun markClaimed(id: String, claimedAt: Long = System.currentTimeMillis()): Boolean = db.query { conn ->
+        conn.prepareStatement(
+            "UPDATE `$table` SET `claimed_at` = ? WHERE `id` = ? AND `claimed_at` IS NULL;"
+        ).use { ps ->
+            ps.setLong(1, claimedAt)
+            ps.setString(2, id)
+            ps.executeUpdate() > 0
+        }
+    }
+
+    suspend fun purgeExpired(now: Long = System.currentTimeMillis()): Int = db.query { conn ->
+        conn.prepareStatement(
+            "DELETE FROM `$table` WHERE `claimed_at` IS NULL AND `expires_at` IS NOT NULL AND `expires_at` <= ?;"
+        ).use { ps ->
+            ps.setLong(1, now)
+            ps.executeUpdate()
+        }
+    }
+
+    private fun mapDelivery(rs: ResultSet): DeliveryRecord {
+        val exp = rs.getLong("expires_at").let { if (rs.wasNull()) null else it }
+        val claimed = rs.getLong("claimed_at").let { if (rs.wasNull()) null else it }
+        return DeliveryRecord(
+            id = rs.getString("id"),
+            targetUuid = UUID.fromString(rs.getString("target_uuid")),
+            senderName = rs.getString("sender_name"),
+            itemBase64 = rs.getString("item_base64"),
+            message = rs.getString("message"),
+            createdAt = rs.getLong("created_at"),
+            expiresAt = exp,
+            claimedAt = claimed,
+        )
+    }
+}
+
+class SpawnerChargeRepository(private val db: DatabaseManager) {
+
+    private val table = db.table("spawner_charges")
+
+    suspend fun findByUuid(uuid: UUID): SpawnerChargeRecord? = db.query { conn ->
+        conn.prepareStatement("SELECT * FROM `$table` WHERE `uuid` = ? LIMIT 1;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeQuery().use { rs ->
+                if (rs.next()) {
+                    SpawnerChargeRecord(
+                        uuid = uuid,
+                        charges = rs.getInt("charges"),
+                        lastUpdated = rs.getLong("last_updated"),
+                    )
+                } else null
+            }
+        }
+    }
+
+    suspend fun upsert(record: SpawnerChargeRecord) {
+        val sql = when (db.dialect) {
+            DatabaseDialect.SQLITE -> """
+                INSERT INTO `$table` (`uuid`, `charges`, `last_updated`)
+                VALUES (?, ?, ?)
+                ON CONFLICT(`uuid`) DO UPDATE SET
+                    `charges` = excluded.`charges`,
+                    `last_updated` = excluded.`last_updated`;
+            """.trimIndent()
+
+            DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
+                INSERT INTO `$table` (`uuid`, `charges`, `last_updated`)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    `charges` = VALUES(`charges`),
+                    `last_updated` = VALUES(`last_updated`);
+            """.trimIndent()
+        }
+        db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, record.uuid.toString())
+                ps.setInt(2, record.charges)
+                ps.setLong(3, record.lastUpdated)
+                ps.executeUpdate()
+            }
+        }
+    }
+}
+
+class AlertRepository(private val db: DatabaseManager) {
+
+    private val table = db.table("player_alerts")
+
+    suspend fun findAll(): List<AlertRecord> = db.query { conn ->
+        val out = mutableListOf<AlertRecord>()
+        conn.prepareStatement("SELECT * FROM `$table` ORDER BY `created_at` DESC;").use { ps ->
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += AlertRecord(
+                        uuid = UUID.fromString(rs.getString("uuid")),
+                        username = rs.getString("username"),
+                        addedBy = rs.getString("added_by"),
+                        reason = rs.getString("reason"),
+                        createdAt = rs.getLong("created_at"),
+                    )
+                }
+            }
+        }
+        out
+    }
+
+    suspend fun findByUuid(uuid: UUID): AlertRecord? = db.query { conn ->
+        conn.prepareStatement("SELECT * FROM `$table` WHERE `uuid` = ? LIMIT 1;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeQuery().use { rs ->
+                if (rs.next()) {
+                    AlertRecord(
+                        uuid = uuid,
+                        username = rs.getString("username"),
+                        addedBy = rs.getString("added_by"),
+                        reason = rs.getString("reason"),
+                        createdAt = rs.getLong("created_at"),
+                    )
+                } else null
+            }
+        }
+    }
+
+    suspend fun upsert(record: AlertRecord) {
+        val sql = when (db.dialect) {
+            DatabaseDialect.SQLITE -> """
+                INSERT INTO `$table` (`uuid`, `username`, `added_by`, `reason`, `created_at`)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(`uuid`) DO UPDATE SET
+                    `username` = excluded.`username`,
+                    `added_by` = excluded.`added_by`,
+                    `reason` = excluded.`reason`,
+                    `created_at` = excluded.`created_at`;
+            """.trimIndent()
+
+            DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
+                INSERT INTO `$table` (`uuid`, `username`, `added_by`, `reason`, `created_at`)
+                VALUES (?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    `username` = VALUES(`username`),
+                    `added_by` = VALUES(`added_by`),
+                    `reason` = VALUES(`reason`),
+                    `created_at` = VALUES(`created_at`);
+            """.trimIndent()
+        }
+        db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, record.uuid.toString())
+                ps.setString(2, record.username)
+                ps.setString(3, record.addedBy)
+                ps.setString(4, record.reason)
+                ps.setLong(5, record.createdAt)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun delete(uuid: UUID): Boolean = db.query { conn ->
+        conn.prepareStatement("DELETE FROM `$table` WHERE `uuid` = ?;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeUpdate() > 0
+        }
+    }
+}
+
+class IpLockRepository(private val db: DatabaseManager) {
+
+    private val table = db.table("ip_locks")
+
+    suspend fun findByUuid(uuid: UUID): List<IpLockRecord> = db.query { conn ->
+        val out = mutableListOf<IpLockRecord>()
+        conn.prepareStatement("SELECT * FROM `$table` WHERE `uuid` = ? ORDER BY `created_at` ASC;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    out += IpLockRecord(
+                        uuid = uuid,
+                        ip = rs.getString("ip"),
+                        addedBy = rs.getString("added_by"),
+                        createdAt = rs.getLong("created_at"),
+                    )
+                }
+            }
+        }
+        out
+    }
+
+    suspend fun add(record: IpLockRecord) {
+        val sql = when (db.dialect) {
+            DatabaseDialect.SQLITE -> """
+                INSERT INTO `$table` (`uuid`, `ip`, `added_by`, `created_at`)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(`uuid`, `ip`) DO UPDATE SET
+                    `added_by` = excluded.`added_by`,
+                    `created_at` = excluded.`created_at`;
+            """.trimIndent()
+
+            DatabaseDialect.MYSQL, DatabaseDialect.MARIADB -> """
+                INSERT INTO `$table` (`uuid`, `ip`, `added_by`, `created_at`)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    `added_by` = VALUES(`added_by`),
+                    `created_at` = VALUES(`created_at`);
+            """.trimIndent()
+        }
+        db.query { conn ->
+            conn.prepareStatement(sql).use { ps ->
+                ps.setString(1, record.uuid.toString())
+                ps.setString(2, record.ip)
+                ps.setString(3, record.addedBy)
+                ps.setLong(4, record.createdAt)
+                ps.executeUpdate()
+            }
+        }
+    }
+
+    suspend fun remove(uuid: UUID, ip: String): Boolean = db.query { conn ->
+        conn.prepareStatement("DELETE FROM `$table` WHERE `uuid` = ? AND `ip` = ?;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.setString(2, ip)
+            ps.executeUpdate() > 0
+        }
+    }
+
+    suspend fun removeAll(uuid: UUID): Int = db.query { conn ->
+        conn.prepareStatement("DELETE FROM `$table` WHERE `uuid` = ?;").use { ps ->
+            ps.setString(1, uuid.toString())
+            ps.executeUpdate()
         }
     }
 }

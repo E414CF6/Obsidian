@@ -23,6 +23,7 @@ class SpawnService(
     private val spawnsFile = YamlConfigFile(context.plugin, "spawns.yml")
     private val groupSpawns = LinkedHashMap<String, StoredLocation>()
     private var mainSpawn: StoredLocation? = null
+    private var firstSpawn: StoredLocation? = null
 
     var teleportOnFirstJoin: Boolean = true
         private set
@@ -41,6 +42,7 @@ class SpawnService(
 
         groupSpawns.clear()
         mainSpawn = StoredLocation.deserialize(spawnsFile.yaml.getString("main"))
+        firstSpawn = StoredLocation.deserialize(spawnsFile.yaml.getString("first-spawn"))
         val groupsSection = spawnsFile.yaml.getConfigurationSection("groups")
         if (groupsSection != null) {
             for (key in groupsSection.getKeys(false)) {
@@ -63,6 +65,15 @@ class SpawnService(
         spawnsFile.save()
     }
 
+    fun setFirstSpawn(location: Location) {
+        val stored = StoredLocation.fromBukkit(location) ?: return
+        firstSpawn = stored
+        spawnsFile.yaml.set("first-spawn", stored.serialize())
+        spawnsFile.save()
+    }
+
+    fun getFirstSpawn(): Location? = firstSpawn?.toBukkitLocation()
+
     fun getSpawnFor(player: Player): Location? {
         for ((group, loc) in groupSpawns) {
             if (player.hasPermission("obsidian.spawngroup.$group")) {
@@ -75,7 +86,7 @@ class SpawnService(
     @EventHandler(priority = EventPriority.HIGH)
     fun onFirstJoin(event: PlayerJoinEvent) {
         if (!teleportOnFirstJoin || event.player.hasPlayedBefore()) return
-        val spawn = getSpawnFor(event.player) ?: return
+        val spawn = firstSpawn?.toBukkitLocation() ?: getSpawnFor(event.player) ?: return
         context.scheduler.runForEntity(event.player) {
             teleportService.teleport(event.player, spawn, TeleportCause.PLUGIN, ensureSafe = false, recordBack = false)
         }

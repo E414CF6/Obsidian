@@ -121,6 +121,19 @@ playtime:
   ranks:
     auto-rankup: false
 
+votes:
+  enabled: true
+  cooldown-seconds: 0
+  max-votes-per-day: 0
+  commands-on-vote:
+    - "broadcast: <gold>{player}</gold> <yellow>voted via <aqua>{service}</aqua>!</yellow>"
+  extra-rewards:
+    10:
+      - "console: money give {player} 500"
+
+delivery:
+  expire-days: 30
+
 moderation:
   default-ban-reason: "Violated server rules"
   default-mute-reason: "Muted by staff"
@@ -187,6 +200,16 @@ chat:
   staffchat-format: "<dark_purple>[Staff]</dark_purple> <white>{sender}</white><gray>: {message}</gray>"
   helpop-format: "<red>[HelpOp]</red> <white>{sender}</white><gray>: {message}</gray>"
   broadcast-format: "<dark_gray>[<gradient:#f59e0b:#ef4444><bold>NOTICE</bold></gradient>]</dark_gray> <white>{message}</white>"
+  delete-button-for-staff: true
+  bubble:
+    enabled: true
+    offset: 2.35
+    base-seconds: 4.0
+    max-seconds: 10.0
+    extra-seconds-per-char: 0.03
+    line-width: 180
+    scale: 1.0
+    background-alpha: 128
   filter:
     enabled: true
     spam-cooldown-ms: 1200
@@ -279,3 +302,61 @@ stats:
 
 spawners:
   egg-interact-require-permission: true
+  charge:
+    enabled: true
+    default-charges: 3
+    max-charges: 100
+    silk-touch-required: true
+    drop-chance: 100.0
+    max-spawners-per-chunk: 0
+
+combat:
+  enabled: true
+  pvp-tag-seconds: 15
+  pve-tag-seconds: 0
+  kill-on-logout: true
+  disable-fly: true
+  blocked-commands:
+    - home
+    - sethome
+    - warp
+    - spawn
+    - tp
+    - tpa
+    - tpahere
+    - back
+    - dback
+    - rt
+    - fly
+  head-drops:
+    player-chance: 100.0
+    mob-chance: 0.0
+
+anvil:
+  colors-enabled: true
+  max-repair-cost: 0
+
+enchants:
+  disabled: [ ]
+
+server-ops:
+  motd: ""
+  max-players: -1
+  donate-lines:
+    - "<gradient:#7c3aed:#06b6d4><bold>Support the Server</bold></gradient>"
+    - "&7Visit our store: &bhttps://store.example.com"
+
+painting:
+  shift-cycle-enabled: true
+
+console-filter:
+  enabled: true
+  patterns: [ ]
+
+maps:
+  enabled: true
+  bluemap: true
+  dynmap: true
+  show-warps: true
+  show-spawn: true
+  show-portals: true
