@@ -88,8 +88,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
                     Command.SINGLE_SUCCESS
                 }
                 .then(
-                    Commands.argument("args", StringArgumentType.greedyString())
-                        .suggests { ctx, sb ->
+                    Commands.argument("args", StringArgumentType.greedyString()).suggests { _, sb ->
                             val input = sb.remainingLowerCase
                             val parts = input.split(" ")
                             if (parts.size <= 1) {
@@ -165,7 +164,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             mobCleanNode,
             "Cull excess mobs in current or surrounding chunks based on farm limits",
-            if (context.config.registerStandaloneAliases) listOf("mfmclean", "cleanmobs") else emptyList(),
+            listOf("mfmclean", "cleanmobs"),
         )
 
         val mobReportNode = Commands.literal("mobreport")
@@ -209,7 +208,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             mobReportNode,
             "Report top densest mob chunks causing potential lag",
-            if (context.config.registerStandaloneAliases) listOf("mfmreport", "lagchunks") else emptyList(),
+            listOf("mfmreport", "lagchunks"),
         )
     }
 
@@ -552,7 +551,7 @@ class MobFarmModule(private val context: ObsidianContext) : ObsidianModule {
             if (result != null) {
                 onComplete(result)
             } else {
-                sender.sendMessage(TextFormatter.format("<red>Timed out collecting MobFarm chunk data.</red>"))
+                context.locale.send(sender, "mobfarm.timeout")
             }
             return
         }

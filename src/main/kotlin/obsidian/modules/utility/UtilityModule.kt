@@ -115,34 +115,32 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             gmNode,
             "Change game mode",
-            if (context.config.registerStandaloneAliases) listOf("gamemode") else emptyList(),
+            listOf("gamemode"),
         )
 
-        if (context.config.registerStandaloneAliases) {
-            mapOf(
-                "gms" to GameMode.SURVIVAL,
-                "gmc" to GameMode.CREATIVE,
-                "gma" to GameMode.ADVENTURE,
-                "gmsp" to GameMode.SPECTATOR,
-            ).forEach { (alias, mode) ->
-                val aliasNode = Commands.literal(alias)
-                    .requires { it.sender.hasPermission("obsidian.command.gm") || it.sender.hasPermission("obsidian.admin") }
-                    .executes { ctx ->
-                        val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        applyGameMode(ctx.source.sender, player, mode)
-                    }.then(Commands.argument("target", ArgumentTypes.player()).requires {
-                        it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
-                            "obsidian.admin"
-                        )
-                    }.executes { ctx ->
-                        val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
-                            .resolve(ctx.source).firstOrNull() ?: return@executes 0
-                        applyGameMode(ctx.source.sender, target, mode)
-                    }).build()
-                registrar.register(
-                    context.plugin.pluginMeta, aliasNode, "Shortcut for /gm ${mode.name.lowercase()}", emptyList()
-                )
-            }
+        mapOf(
+            "gms" to GameMode.SURVIVAL,
+            "gmc" to GameMode.CREATIVE,
+            "gma" to GameMode.ADVENTURE,
+            "gmsp" to GameMode.SPECTATOR,
+        ).forEach { (alias, mode) ->
+            val aliasNode = Commands.literal(alias)
+                .requires { it.sender.hasPermission("obsidian.command.gm") || it.sender.hasPermission("obsidian.admin") }
+                .executes { ctx ->
+                    val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
+                    applyGameMode(ctx.source.sender, player, mode)
+                }.then(Commands.argument("target", ArgumentTypes.player()).requires {
+                    it.sender.hasPermission("obsidian.command.gm.others") || it.sender.hasPermission(
+                        "obsidian.admin"
+                    )
+                }.executes { ctx ->
+                    val target = ctx.getArgument("target", PlayerSelectorArgumentResolver::class.java)
+                        .resolve(ctx.source).firstOrNull() ?: return@executes 0
+                    applyGameMode(ctx.source.sender, target, mode)
+                }).build()
+            registrar.register(
+                context.plugin.pluginMeta, aliasNode, "Shortcut for /gm ${mode.name.lowercase()}", emptyList()
+            )
         }
     }
 
@@ -337,7 +335,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             enderNode,
             "Open ender chest",
-            if (context.config.registerStandaloneAliases) listOf("enderchest", "ec") else emptyList(),
+            listOf("enderchest", "ec"),
         )
 
         val hatNode = Commands.literal("hat")
@@ -498,7 +496,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             itemNode,
             "Give an item to yourself",
-            if (context.config.registerStandaloneAliases) listOf("i") else emptyList(),
+            listOf("i"),
         )
     }
 
@@ -594,7 +592,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             disposeNode,
             "Open a disposal inventory",
-            if (context.config.registerStandaloneAliases) listOf("trash") else emptyList(),
+            listOf("trash"),
         )
 
         // /more [amount]
@@ -627,7 +625,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             condenseNode,
             "Condense items into blocks",
-            if (context.config.registerStandaloneAliases) listOf("compact") else emptyList(),
+            listOf("compact"),
         )
 
         // /uncondense [hand|all]
@@ -669,7 +667,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             itemNameNode,
             "Rename held item",
-            if (context.config.registerStandaloneAliases) listOf("rename") else emptyList(),
+            listOf("rename"),
         )
 
         // /itemlore <add|set|remove|clear> ...
@@ -835,7 +833,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             headNode,
             "Get a player head",
-            if (context.config.registerStandaloneAliases) listOf("skull") else emptyList(),
+            listOf("skull"),
         )
     }
 
@@ -1252,7 +1250,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             description,
-            if (context.config.registerStandaloneAliases) aliases else emptyList(),
+            aliases,
         )
     }
 
@@ -1355,7 +1353,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Manage custom saved items",
-            if (context.config.registerStandaloneAliases) listOf("saveditem", "si") else emptyList(),
+            listOf("saveditem", "si"),
         )
     }
 
@@ -1369,8 +1367,13 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                 } else {
                     context.locale.send(ctx.source.sender, "utility.customrecipe-header", "count" to list.size)
                     for (item in list) {
-                        ctx.source.sender.sendMessage(
-                            TextFormatter.format("<gray>-</gray> <aqua>${item.id}</aqua> <dark_gray>(</dark_gray><yellow>${item.type}</yellow><dark_gray>)</dark_gray><gray>: <white>${item.amount}x ${item.result.name}</white>")
+                        context.locale.sendRaw(
+                            ctx.source.sender,
+                            "utility.customrecipe-entry",
+                            "id" to item.id,
+                            "type" to item.type,
+                            "amount" to item.amount,
+                            "result" to item.result.name,
                         )
                     }
                 }
@@ -1419,7 +1422,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Recycle enchanted gear into books and components",
-            if (context.config.registerStandaloneAliases) listOf("salvage", "recycle") else emptyList(),
+            listOf("salvage", "recycle"),
         )
     }
 

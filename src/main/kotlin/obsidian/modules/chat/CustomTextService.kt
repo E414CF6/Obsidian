@@ -54,7 +54,13 @@ class CustomTextService(private val context: ObsidianContext) {
         val from = (page - 1) * sec.linesPerPage
         val to = minOf(from + sec.linesPerPage, sec.lines.size)
 
-        sender.sendMessage(TextFormatter.format("${sec.title} <gray>($page/$totalPages)</gray>"))
+        context.locale.sendRaw(
+            sender,
+            "chat.ctext-header",
+            "title" to sec.title,
+            "page" to page,
+            "total" to totalPages,
+        )
         for (i in from until to) {
             val line = placeholders?.applyPlaceholders(player, sec.lines[i]) ?: sec.lines[i]
             sender.sendMessage(TextFormatter.format(line))

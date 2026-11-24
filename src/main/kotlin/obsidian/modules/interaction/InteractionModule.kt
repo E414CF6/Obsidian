@@ -10,7 +10,6 @@ import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSele
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.module.ObsidianModule
-import obsidian.core.text.TextFormatter
 import org.bukkit.event.Listener
 
 /**
@@ -181,7 +180,13 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                     context.locale.send(sender, "interaction.ic-list-header", "count" to all.size)
                     all.forEach { b ->
-                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${b.id}</aqua> <gray>(${b.type}, ${b.commands.size} cmds)</gray>"))
+                        context.locale.sendRaw(
+                            sender,
+                            "interaction.ic-list-entry",
+                            "id" to b.id,
+                            "type" to b.type,
+                            "commands" to b.commands.size,
+                        )
                     }
                     Command.SINGLE_SUCCESS
                 }).then(
@@ -269,7 +274,12 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
                         context.locale.send(player, "interaction.attached-empty")
                     } else {
                         cmds.forEachIndexed { idx, cmd ->
-                            player.sendMessage(TextFormatter.format(" <gray>${idx + 1}.</gray> <aqua>$cmd</aqua>"))
+                            context.locale.sendRaw(
+                                player,
+                                "interaction.attached-entry",
+                                "index" to (idx + 1),
+                                "command" to cmd,
+                            )
                         }
                     }
                     Command.SINGLE_SUCCESS
@@ -317,7 +327,7 @@ class InteractionModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Attach commands to the held item via PDC",
-            if (context.config.registerStandaloneAliases) listOf("ac", "attachcmd") else emptyList(),
+            listOf("ac", "attachcmd"),
         )
     }
 

@@ -9,7 +9,7 @@ class ObsidianConfig(private val plugin: Plugin) {
 
     private val configFile = YamlConfigFile(plugin, "config.yml")
 
-    var language: String = "ko"
+    var language: String = "ko_kr"
         private set
     var storageMethod: String = "sqlite"
         private set
@@ -47,7 +47,7 @@ class ObsidianConfig(private val plugin: Plugin) {
     fun reload() {
         configFile.reload()
         val y = configFile.yaml
-        language = y.getString("language", "ko") ?: "ko"
+        language = y.getString("language", "ko_kr") ?: "ko_kr"
         storageMethod = (y.getString("storage.method", "sqlite") ?: "sqlite").lowercase()
         autoSaveIntervalSeconds = y.getLong("storage.auto-save-interval-seconds", 60L).coerceAtLeast(10L)
         forceSaveOnLogout = y.getBoolean("storage.force-save-on-logout", true)

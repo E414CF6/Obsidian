@@ -83,7 +83,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Check online playtime",
-            if (context.config.registerStandaloneAliases) listOf("pt") else emptyList(),
+            listOf("pt"),
         )
     }
 
@@ -139,7 +139,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Show top playtime leaderboard",
-            if (context.config.registerStandaloneAliases) listOf("pttop") else emptyList(),
+            listOf("pttop"),
         )
     }
 
@@ -263,7 +263,7 @@ class PlayTimeModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Claim milestone playtime rewards",
-            if (context.config.registerStandaloneAliases) listOf("playtimerewards") else emptyList(),
+            listOf("playtimerewards"),
         )
     }
 }

@@ -62,7 +62,10 @@ class NotificationService(private val context: ObsidianContext) {
         val initialSeconds = remaining.toFloat()
 
         val bar = BossBar.bossBar(
-            TextFormatter.format("$message <gold>($remaining)</gold>"),
+            context.locale.component(
+                "chat.countdown-bar",
+                mapOf("message" to message, "seconds" to remaining.toString())
+            ),
             1.0f,
             BossBar.Color.RED,
             BossBar.Overlay.NOTCHED_10,
@@ -78,14 +81,19 @@ class NotificationService(private val context: ObsidianContext) {
                         p.hideBossBar(bar)
                         p.showTitle(
                             net.kyori.adventure.title.Title.title(
-                                TextFormatter.format("<green><bold>GO!</bold></green>"),
+                                context.locale.component("chat.countdown-go"),
                                 Component.empty(),
                             )
                         )
                     }
                 }
             } else {
-                bar.name(TextFormatter.format("$message <gold>($remaining)</gold>"))
+                bar.name(
+                    context.locale.component(
+                        "chat.countdown-bar",
+                        mapOf("message" to message, "seconds" to remaining.toString()),
+                    )
+                )
                 bar.progress((remaining / initialSeconds).coerceIn(0.0f, 1.0f))
             }
         }

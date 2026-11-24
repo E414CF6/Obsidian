@@ -3,7 +3,6 @@ package obsidian.modules.visual
 import obsidian.core.ObsidianContext
 import obsidian.core.gui.MenuItems
 import obsidian.core.gui.MenuWindow
-import obsidian.core.text.TextFormatter
 import org.bukkit.Material
 import org.bukkit.entity.ArmorStand
 import org.bukkit.entity.Player
@@ -53,18 +52,23 @@ class ArmorStandService(private val context: ObsidianContext) {
 
     fun openEditor(player: Player, stand: ArmorStand) {
         val menu =
-            MenuWindow(TextFormatter.format("<gradient:#7c3aed:#06b6d4><bold>ArmorStand Editor</bold></gradient>"), 3)
+            MenuWindow(context.locale.component("visual.armorstand-editor-title"), 3)
         menu.fillBorder(MenuItems.item(Material.BLACK_STAINED_GLASS_PANE, "<gray> </gray>"))
 
-        fun stateTag(enabled: Boolean): String = if (enabled) "<green>ON</green>" else "<red>OFF</red>"
+        fun stateTag(enabled: Boolean): String =
+            context.locale.raw(if (enabled) "general.state-on" else "general.state-off")
 
-        fun addToggle(slot: Int, mat: Material, label: String, flag: String, current: () -> Boolean) {
+        fun addToggle(slot: Int, mat: Material, labelKey: String, flag: String, current: () -> Boolean) {
+            val label = context.locale.raw(labelKey)
             menu.set(
                 slot,
                 MenuItems.item(
                     mat,
                     "<aqua>$label</aqua>",
-                    listOf("<gray>Current:</gray> ${stateTag(current())}", "<yellow>Click to toggle</yellow>"),
+                    listOf(
+                        context.locale.raw("visual.armorstand-current", "state" to stateTag(current())),
+                        context.locale.raw("visual.armorstand-click-toggle"),
+                    ),
                 ),
             ) { click ->
                 if (!stand.isValid) {
@@ -76,18 +80,25 @@ class ArmorStandService(private val context: ObsidianContext) {
             }
         }
 
-        addToggle(10, Material.FEATHER, "Small Size", "small") { stand.isSmall }
-        addToggle(11, Material.STICK, "Show Arms", "arms") { stand.hasArms() }
-        addToggle(12, Material.SMOOTH_STONE_SLAB, "Base Plate", "baseplate") { stand.hasBasePlate() }
-        addToggle(13, Material.GLASS, "Visible", "visible") { stand.isVisible }
-        addToggle(14, Material.ANVIL, "Gravity", "gravity") { stand.hasGravity() }
-        addToggle(15, Material.GLOWSTONE_DUST, "Glowing", "glowing") { stand.isGlowing }
-        addToggle(16, Material.BARRIER, "Marker", "marker") { stand.isMarker }
+        addToggle(10, Material.FEATHER, "visual.armorstand-opt-small", "small") { stand.isSmall }
+        addToggle(11, Material.STICK, "visual.armorstand-opt-arms", "arms") { stand.hasArms() }
+        addToggle(
+            12,
+            Material.SMOOTH_STONE_SLAB,
+            "visual.armorstand-opt-baseplate",
+            "baseplate"
+        ) { stand.hasBasePlate() }
+        addToggle(13, Material.GLASS, "visual.armorstand-opt-visible", "visible") { stand.isVisible }
+        addToggle(14, Material.ANVIL, "visual.armorstand-opt-gravity", "gravity") { stand.hasGravity() }
+        addToggle(15, Material.GLOWSTONE_DUST, "visual.armorstand-opt-glowing", "glowing") { stand.isGlowing }
+        addToggle(16, Material.BARRIER, "visual.armorstand-opt-marker", "marker") { stand.isMarker }
 
         menu.set(
             21,
             MenuItems.item(
-                Material.COMPASS, "<gold>Rotate +45°</gold>", listOf("<yellow>Click to rotate ArmorStand</yellow>")
+                Material.COMPASS,
+                context.locale.raw("visual.armorstand-rotate-name"),
+                listOf(context.locale.raw("visual.armorstand-rotate-lore")),
             ),
         ) { click ->
             if (!stand.isValid) {
@@ -104,8 +115,8 @@ class ArmorStandService(private val context: ObsidianContext) {
             23,
             MenuItems.item(
                 Material.MILK_BUCKET,
-                "<yellow>Reset Pose</yellow>",
-                listOf("<gray>Resets all body angles to zero</gray>")
+                context.locale.raw("visual.armorstand-reset-name"),
+                listOf(context.locale.raw("visual.armorstand-reset-lore")),
             ),
         ) { click ->
             if (!stand.isValid) {

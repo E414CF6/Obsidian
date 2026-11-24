@@ -13,6 +13,7 @@ import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockPistonExtendEvent
 import org.bukkit.event.block.BlockPistonRetractEvent
 import org.bukkit.event.block.BlockPlaceEvent
+import java.util.*
 
 /**
  * Enforces per-chunk block placement and piston-transfer limits for configured materials
@@ -36,9 +37,9 @@ class BlockLimitService(
         val limit = settings.blockLimits[mat] ?: return
 
         val player = event.player
-        if (player.hasPermission("obsidian.admin") ||
-            player.hasPermission("obsidian.mobfarm.bypasslimit.${mat.name.lowercase()}") ||
-            player.hasPermission("obsidian.mobfarm.bypasslimit.*")
+        if (player.hasPermission("obsidian.admin") || player.hasPermission("obsidian.mobfarm.bypasslimit.${mat.name.lowercase()}") || player.hasPermission(
+                "obsidian.mobfarm.bypasslimit.*"
+            )
         ) {
             return
         }
@@ -94,7 +95,7 @@ class BlockLimitService(
 
             if (srcChunkX != dstChunkX || srcChunkZ != dstChunkZ) {
                 val coord = ChunkCoord(dstChunkX, dstChunkZ)
-                val matCounts = incomingByChunk.getOrPut(coord) { HashMap() }
+                val matCounts = incomingByChunk.getOrPut(coord) { EnumMap(Material::class.java) }
                 matCounts[mat] = (matCounts[mat] ?: 0) + 1
                 sampleYByChunk.putIfAbsent(coord, block.y)
             }

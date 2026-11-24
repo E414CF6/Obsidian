@@ -161,13 +161,22 @@ class WarpService(
                 val mat = Material.matchMaterial(warp.iconMaterial) ?: Material.ENDER_PEARL
                 val item = MenuItems.item(
                     material = mat,
-                    name = "<aqua>${warp.name}</aqua>",
+                    name = context.locale.raw("warp.gui-item-name", "name" to warp.name),
                     lore = buildList {
-                        if (!warp.groupName.isNullOrBlank()) add("<gray>Group: <white>${warp.groupName}</white>")
-                        add("<gray>World: <white>${warp.location.world}</white>")
-                        add("<gray>Coords: <white>${warp.location.x.roundToInt()}, ${warp.location.y.roundToInt()}, ${warp.location.z.roundToInt()}</white>")
+                        if (!warp.groupName.isNullOrBlank()) {
+                            add(context.locale.raw("warp.gui-group", "group" to warp.groupName))
+                        }
+                        add(context.locale.raw("general.gui-world", "world" to warp.location.world))
+                        add(
+                            context.locale.raw(
+                                "general.gui-coords",
+                                "x" to warp.location.x.roundToInt(),
+                                "y" to warp.location.y.roundToInt(),
+                                "z" to warp.location.z.roundToInt(),
+                            )
+                        )
                         add("")
-                        add("<green>Click to teleport</green>")
+                        add(context.locale.raw("warp.gui-click"))
                     },
                 )
                 window.set(row * 9 + col, item) {
@@ -178,12 +187,12 @@ class WarpService(
         }
 
         if (currentPage > 1) {
-            window.set(48, MenuItems.item(Material.ARROW, "<yellow>Previous Page</yellow>")) {
+            window.set(48, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-prev-page"))) {
                 openWarpsGui(player, currentPage - 1, group)
             }
         }
         if (currentPage < totalPages) {
-            window.set(50, MenuItems.item(Material.ARROW, "<yellow>Next Page</yellow>")) {
+            window.set(50, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-next-page"))) {
                 openWarpsGui(player, currentPage + 1, group)
             }
         }

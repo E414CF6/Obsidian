@@ -2,7 +2,6 @@ package obsidian.modules.chat
 
 import net.kyori.adventure.text.event.ClickEvent
 import obsidian.core.ObsidianContext
-import obsidian.core.text.TextFormatter
 import org.bukkit.Bukkit
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.event.EventHandler
@@ -134,7 +133,7 @@ class MailService(private val context: ObsidianContext) : Listener {
             if (!player.isOnline) return@runForEntityDelayed
             val comp = context.locale.prefixedComponent("chat.mail-unread-join", mapOf("count" to unread.toString()))
                 .append(
-                    TextFormatter.format(" <click:run_command:'/mail read'><aqua>[Read]</aqua></click>")
+                    context.locale.component("chat.mail-read-btn")
                         .clickEvent(ClickEvent.runCommand("/mail read"))
                 )
             player.sendMessage(comp)

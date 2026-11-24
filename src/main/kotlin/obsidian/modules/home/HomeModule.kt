@@ -166,14 +166,14 @@ class HomeModule(
             context.plugin.pluginMeta,
             node,
             "Delete a personal home",
-            if (context.config.registerStandaloneAliases) listOf("delhome") else emptyList(),
+            listOf("delhome"),
         )
     }
 
     private fun sendHomeTextList(player: Player) {
         val homes = homeService.getHomes(player.uniqueId)
         val links = homes.joinToString("<gray>, </gray>") { h ->
-            "<click:run_command:'/home ${h.name}'><hover:show_text:'<green>Click to teleport</green>'><aqua>${h.name}</aqua></hover></click>"
+            context.locale.raw("home.list-entry", "name" to h.name)
         }
         player.sendMessage(context.locale.prefix().append(TextFormatter.format(links)))
     }

@@ -4,7 +4,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import obsidian.core.ObsidianContext
 import obsidian.core.database.EconomyRecord
-import obsidian.core.text.TextFormatter
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.NamespacedKey
@@ -179,12 +178,13 @@ class EconomyService(private val context: ObsidianContext) : Listener {
         val rounded = roundMoney(amount)
         val item = ItemStack(Material.PAPER, 1)
         val meta = item.itemMeta
-        meta.displayName(TextFormatter.format("<gold><bold>Bank Cheque</bold></gold> <gray>(${formatMoney(rounded)})</gray>"))
+        val formatted = formatMoney(rounded)
+        meta.displayName(context.locale.component("economy.cheque-name", mapOf("amount" to formatted)))
         meta.lore(
             listOf(
-                TextFormatter.format("<gray>Value:</gray> <gold>${formatMoney(rounded)}</gold>"),
-                TextFormatter.format("<gray>Issued by:</gray> <white>$creatorName</white>"),
-                TextFormatter.format("<yellow>Right-click to redeem</yellow>"),
+                context.locale.component("economy.cheque-lore-value", mapOf("amount" to formatted)),
+                context.locale.component("economy.cheque-lore-issuer", mapOf("issuer" to creatorName)),
+                context.locale.component("economy.cheque-lore-redeem"),
             )
         )
         meta.persistentDataContainer.set(chequeAmountKey, PersistentDataType.DOUBLE, rounded)

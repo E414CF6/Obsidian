@@ -44,9 +44,7 @@ class ModerationListeners(
         event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, screen)
 
         if (service.notifyBannedJoin && !service.isThrottled("banned_join_${event.uniqueId}")) {
-            val alert = TextFormatter.format(
-                "<dark_gray>[<red>Notice</red>]</dark_gray> <gray>Banned player <white>${event.name}</white> attempted to connect.</gray>"
-            )
+            val alert = context.locale.component("moderation.notify-banned-join", mapOf("player" to event.name))
             for (p in Bukkit.getOnlinePlayers()) {
                 if (p.hasPermission("obsidian.notify.banned_join") || p.hasPermission("obsidian.admin")) {
                     p.sendMessage(alert)
@@ -87,10 +85,19 @@ class ModerationListeners(
                         if (!service.isThrottled("dupeip_${player.uniqueId}")) {
                             val otherAlts =
                                 alts.filter { it.uuid != player.uniqueId }.joinToString(", ") { it.username }
-                            val tag =
-                                if (hasBannedAlt) " <red>(Banned Alt Detected)</red>" else if (hasMutedAlt) " <gold>(Muted Alt Detected)</gold>" else ""
-                            val alertMsg = TextFormatter.format(
-                                "<dark_gray>[<yellow>Alt Notice</yellow>]</dark_gray> <white>${player.name}</white> has <aqua>${alts.size}</aqua> accounts on this IP: <gray>$otherAlts</gray>$tag"
+                            val tag = when {
+                                hasBannedAlt -> context.locale.raw("moderation.notify-dupeip-banned-tag")
+                                hasMutedAlt -> context.locale.raw("moderation.notify-dupeip-muted-tag")
+                                else -> ""
+                            }
+                            val alertMsg = context.locale.component(
+                                "moderation.notify-dupeip-join",
+                                mapOf(
+                                    "player" to player.name,
+                                    "count" to alts.size.toString(),
+                                    "alts" to otherAlts,
+                                    "tag" to tag,
+                                ),
                             )
                             for (staff in Bukkit.getOnlinePlayers()) {
                                 if (staff.hasPermission("obsidian.notify.dupeip_join") || staff.hasPermission("obsidian.admin")) {
@@ -162,8 +169,9 @@ class ModerationListeners(
                     "reason" to mute.reason,
                 )
                 if (service.notifyMutedChat && !service.isThrottled("muted_cmd_${player.uniqueId}")) {
-                    val alert = TextFormatter.format(
-                        "<dark_gray>[<red>Mute Notice</red>]</dark_gray> <gray>Muted player <white>${player.name}</white> tried to use command: <white>/$label</white></gray>"
+                    val alert = context.locale.component(
+                        "moderation.notify-muted-cmd",
+                        mapOf("player" to player.name, "command" to label),
                     )
                     for (staff in Bukkit.getOnlinePlayers()) {
                         if (staff.hasPermission("obsidian.notify.mute") || staff.hasPermission("obsidian.admin")) {
@@ -208,7 +216,7 @@ class ModerationListeners(
             if (state is Container) {
                 event.isCancelled = true
                 val copy = Bukkit.createInventory(
-                    null, state.inventory.size, TextFormatter.format("<gray>Silent Inspect</gray>")
+                    null, state.inventory.size, context.locale.component("moderation.silent-inspect-title")
                 )
                 copy.contents = state.inventory.contents
                 player.openInventory(copy)

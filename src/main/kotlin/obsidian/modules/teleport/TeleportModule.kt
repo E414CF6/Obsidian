@@ -403,7 +403,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             rtNode,
             "Randomly teleport to a safe location",
-            if (context.config.registerStandaloneAliases) listOf("rtp") else emptyList(),
+            listOf("rtp"),
         )
     }
 

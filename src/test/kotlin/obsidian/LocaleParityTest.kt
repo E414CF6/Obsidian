@@ -17,21 +17,21 @@ class LocaleParityTest {
     }
 
     @Test
-    fun `messages_en and messages_ko have identical leaf keys`() {
-        val resourcesDir = Path.of("src/main/resources")
-        val enKeys = collectLeafKeys(resourcesDir.resolve("messages_en.yml"))
-        val koKeys = collectLeafKeys(resourcesDir.resolve("messages_ko.yml"))
+    fun `locales en_us and ko_kr have identical leaf keys`() {
+        val localesDir = Path.of("src/main/resources/locales")
+        val enKeys = collectLeafKeys(localesDir.resolve("en_us.yml"))
+        val koKeys = collectLeafKeys(localesDir.resolve("ko_kr.yml"))
 
-        assertTrue(enKeys.isNotEmpty(), "messages_en.yml should not be empty")
-        assertEquals(emptySet<String>(), enKeys - koKeys, "Keys missing in messages_ko.yml")
-        assertEquals(emptySet<String>(), koKeys - enKeys, "Keys missing in messages_en.yml")
+        assertTrue(enKeys.isNotEmpty(), "locales/en_us.yml should not be empty")
+        assertEquals(emptySet<String>(), enKeys - koKeys, "Keys missing in locales/ko_kr.yml")
+        assertEquals(emptySet<String>(), koKeys - enKeys, "Keys missing in locales/en_us.yml")
     }
 
     @Test
     fun `all literal locale keys referenced in Kotlin sources exist in locale files`() {
-        val enKeys = collectLeafKeys(Path.of("src/main/resources/messages_en.yml"))
+        val enKeys = collectLeafKeys(Path.of("src/main/resources/locales/en_us.yml"))
         val localeCallRegex = Regex(
-            """(?:locale|messages)\.(?:send|get|component|raw)\(\s*(?:[^,\n]+,\s*)?"([a-z0-9_.-]+)""""
+            """(?:locale|messages)\.(?:(?:send|sendRaw|sendActionBar)\(\s*[^,\n]+,\s*"([a-z0-9_.-]+)"|(?:get|component|prefixedComponent|raw|rawList)\(\s*"([a-z0-9_.-]+)")"""
         )
 
         val missing = sortedSetOf<String>()
@@ -39,7 +39,7 @@ class LocaleParityTest {
             stream.filter { Files.isRegularFile(it) && it.toString().endsWith(".kt") }.forEach { file ->
                 val text = Files.readString(file)
                 for (match in localeCallRegex.findAll(text)) {
-                    val key = match.groupValues[1]
+                    val key = match.groupValues[1].ifEmpty { match.groupValues[2] }
                     if (key !in enKeys) {
                         missing += "$key (${file.fileName})"
                     }

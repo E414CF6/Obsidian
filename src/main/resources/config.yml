@@ -1,6 +1,6 @@
 # Obsidian Configuration
 
-language: ko
+language: ko_kr
 
 storage:
   # Supported: sqlite, mysql, mariadb

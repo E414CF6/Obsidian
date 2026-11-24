@@ -96,7 +96,7 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Check balance",
-            if (context.config.registerStandaloneAliases) listOf("bal") else emptyList(),
+            listOf("bal"),
         )
     }
 
@@ -217,7 +217,7 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Administrative economy commands",
-            if (context.config.registerStandaloneAliases) listOf("eco") else emptyList(),
+            listOf("eco"),
         )
     }
 
@@ -306,7 +306,7 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Show richest players",
-            if (context.config.registerStandaloneAliases) listOf("balancetop") else emptyList(),
+            listOf("balancetop"),
         )
     }
 
@@ -376,7 +376,7 @@ class EconomyModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Withdraw money as a physical bank cheque",
-            if (context.config.registerStandaloneAliases) listOf("moneycheque") else emptyList(),
+            listOf("moneycheque"),
         )
     }
 

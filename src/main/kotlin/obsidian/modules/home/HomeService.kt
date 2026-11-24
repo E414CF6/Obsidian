@@ -152,13 +152,18 @@ class HomeService(
                 val slot = row * 9 + col
                 val item = MenuItems.item(
                     material = Material.RED_BED,
-                    name = "<aqua>${home.name}</aqua>",
+                    name = context.locale.raw("home.gui-item-name", "name" to home.name),
                     lore = listOf(
-                        "<gray>World: <white>${home.location.world}</white>",
-                        "<gray>Coords: <white>${home.location.x.roundToInt()}, ${home.location.y.roundToInt()}, ${home.location.z.roundToInt()}</white>",
+                        context.locale.raw("general.gui-world", "world" to home.location.world),
+                        context.locale.raw(
+                            "general.gui-coords",
+                            "x" to home.location.x.roundToInt(),
+                            "y" to home.location.y.roundToInt(),
+                            "z" to home.location.z.roundToInt(),
+                        ),
                         "",
-                        "<green>Left-click to teleport</green>",
-                        "<red>Shift-right-click to delete</red>",
+                        context.locale.raw("home.gui-left-click"),
+                        context.locale.raw("home.gui-shift-right-click"),
                     ),
                 )
                 window.set(slot, item) { click ->
@@ -176,12 +181,12 @@ class HomeService(
         }
 
         if (currentPage > 1) {
-            window.set(48, MenuItems.item(Material.ARROW, "<yellow>Previous Page</yellow>")) {
+            window.set(48, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-prev-page"))) {
                 openHomesGui(player, currentPage - 1)
             }
         }
         if (currentPage < totalPages) {
-            window.set(50, MenuItems.item(Material.ARROW, "<yellow>Next Page</yellow>")) {
+            window.set(50, MenuItems.item(Material.ARROW, context.locale.raw("general.gui-next-page"))) {
                 openHomesGui(player, currentPage + 1)
             }
         }

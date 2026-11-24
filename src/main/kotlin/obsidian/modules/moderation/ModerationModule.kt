@@ -167,7 +167,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             ipBanNode,
             "Ban a player IP address or wildcard IP",
-            if (context.config.registerStandaloneAliases) listOf("banip", "ban-ip") else emptyList(),
+            listOf("banip", "ban-ip"),
         )
 
         val unbanNode = Commands.literal("unban")
@@ -190,7 +190,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             unbanNode,
             "Unban a player or IP",
-            if (context.config.registerStandaloneAliases) listOf("pardon", "unbanip") else emptyList(),
+            listOf("pardon", "unbanip"),
         )
 
         val checkBanNode = Commands.literal("checkban")
@@ -492,7 +492,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             if (shadow) "Shadow mute a player" else if (ipMute) "Mute a player IP address" else "Mute a player",
-            if (context.config.registerStandaloneAliases) aliases else emptyList(),
+            aliases,
         )
     }
 
@@ -791,7 +791,13 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                     "count" to list.size.toString(),
                 )
                 list.forEachIndexed { i, w ->
-                    sender.sendMessage(TextFormatter.format("<gray>${i + 1}.</gray> <white>${w.reason}</white> <dark_gray>(by ${w.actorName})</dark_gray>"))
+                    context.locale.sendRaw(
+                        sender,
+                        "moderation.warning-entry",
+                        "index" to (i + 1),
+                        "reason" to w.reason,
+                        "actor" to w.actorName,
+                    )
                 }
             },
         )
@@ -829,7 +835,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             delJailNode,
             "Delete a jail location",
-            if (context.config.registerStandaloneAliases) listOf("removejail") else emptyList(),
+            listOf("removejail"),
         )
 
         val jailNode = Commands.literal("jail")
@@ -987,7 +993,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             vanishNode,
             "Toggle vanish visibility",
-            if (context.config.registerStandaloneAliases) listOf("v") else emptyList(),
+            listOf("v"),
         )
     }
 
@@ -1008,7 +1014,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             invNode,
             "Inspect a player's inventory",
-            if (context.config.registerStandaloneAliases) listOf("invsee") else emptyList(),
+            listOf("invsee"),
         )
 
         val invSaveNode = Commands.literal("invsave")
@@ -1196,7 +1202,12 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                         }
                         context.locale.send(sender, "moderation.sameip-header", "target" to "$query ($ip)")
                         matches.forEach { rec ->
-                            sender.sendMessage(TextFormatter.format("<gray>-</gray> <white>${rec.username}</white> <dark_gray>(${rec.uuid})</dark_gray>"))
+                            context.locale.sendRaw(
+                                sender,
+                                "moderation.sameip-entry",
+                                "username" to rec.username,
+                                "uuid" to rec.uuid,
+                            )
                         }
                     },
                 )
@@ -1206,7 +1217,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             sameIpNode,
             "Find accounts associated with the same IP",
-            if (context.config.registerStandaloneAliases) listOf("alts") else emptyList(),
+            listOf("alts"),
         )
     }
 
@@ -1300,14 +1311,13 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                                 "count" to list.size
                             )
                             list.forEachIndexed { idx, note ->
-                                sender.sendMessage(
-                                    TextFormatter.format(
-                                        "<gray>#${idx + 1}</gray> <aqua>${note.author}</aqua> <dark_gray>(${
-                                            maintenanceAndNoteService.formatDate(
-                                                note.timestamp
-                                            )
-                                        })</dark_gray><gray>: <white>${note.text}</white>"
-                                    )
+                                context.locale.sendRaw(
+                                    sender,
+                                    "moderation.note-entry",
+                                    "index" to (idx + 1),
+                                    "author" to note.author,
+                                    "date" to maintenanceAndNoteService.formatDate(note.timestamp),
+                                    "text" to note.text,
                                 )
                             }
                         }
@@ -1350,7 +1360,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             scNode,
             "Toggle silent container inspection mode",
-            if (context.config.registerStandaloneAliases) listOf("sc") else emptyList(),
+            listOf("sc"),
         )
 
         // /patrol
@@ -1402,7 +1412,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             scanNode,
             "Scan players and loaded containers for materials",
-            if (context.config.registerStandaloneAliases) listOf("search") else emptyList(),
+            listOf("search"),
         )
     }
 
@@ -1419,10 +1429,18 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 sender, "moderation.scan-header", "material" to material.name, "total" to result.totalCount
             )
             for ((pName, count) in result.playerMatches.take(10)) {
-                sender.sendMessage(TextFormatter.format("<gray>[Player]</gray> <aqua>$pName</aqua><gray>: <gold>$count</gold></gray>"))
+                context.locale.sendRaw(sender, "moderation.scan-player-entry", "player" to pName, "count" to count)
             }
             for (c in result.containerMatches.take(10)) {
-                sender.sendMessage(TextFormatter.format("<gray>[Container]</gray> <white>${c.world} (${c.x}, ${c.y}, ${c.z})</white><gray>: <gold>${c.count}</gold></gray>"))
+                context.locale.sendRaw(
+                    sender,
+                    "moderation.scan-container-entry",
+                    "world" to c.world,
+                    "x" to c.x,
+                    "y" to c.y,
+                    "z" to c.z,
+                    "count" to c.count,
+                )
             }
         }
         return Command.SINGLE_SUCCESS
@@ -1450,7 +1468,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             banListNode,
             "View active bans",
-            if (context.config.registerStandaloneAliases) listOf("listbans", "lbanlist") else emptyList(),
+            listOf("listbans", "lbanlist"),
         )
 
         // /mutelist [page]
@@ -1478,7 +1496,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             muteListNode,
             "View active mutes",
-            if (context.config.registerStandaloneAliases) listOf("listmutes", "lmutelist") else emptyList(),
+            listOf("listmutes", "lmutelist"),
         )
 
         // /warnlist [page]
@@ -1496,7 +1514,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             warnListNode,
             "View active warnings",
-            if (context.config.registerStandaloneAliases) listOf("listwarns", "lwarnlist") else emptyList(),
+            listOf("listwarns", "lwarnlist"),
         )
 
         // /history <target> [page]
@@ -1521,7 +1539,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             historyNode,
             "View punishment history for a player",
-            if (context.config.registerStandaloneAliases) listOf("hist", "lhistory") else emptyList(),
+            listOf("hist", "lhistory"),
         )
 
         // /staffhistory <staff> [page]
@@ -1546,7 +1564,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             staffHistoryNode,
             "View punishments issued by a staff member",
-            if (context.config.registerStandaloneAliases) listOf("shistory", "staffhist") else emptyList(),
+            listOf("shistory", "staffhist"),
         )
 
         // /staffrollback <staff> <duration>
@@ -1643,16 +1661,18 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             context.locale.send(sender, "moderation.sameip-none", "target" to query)
                         } else {
                             val (id, ips) = res
-                            sender.sendMessage(TextFormatter.format("<gradient:#3b82f6:#8b5cf6><bold>IP History for ${id.name} (${ips.size}):</bold></gradient>"))
+                            context.locale.sendRaw(
+                                sender,
+                                "moderation.iphistory-header",
+                                "player" to id.name,
+                                "count" to ips.size,
+                            )
                             for (ip in ips) {
-                                sender.sendMessage(
-                                    TextFormatter.format(
-                                        "<gray>-</gray> <white>${ip.ip}</white> <dark_gray>(${
-                                            formatDate(
-                                                ip.lastSeen
-                                            )
-                                        })</dark_gray>"
-                                    )
+                                context.locale.sendRaw(
+                                    sender,
+                                    "moderation.iphistory-entry",
+                                    "ip" to ip.ip,
+                                    "date" to formatDate(ip.lastSeen),
                                 )
                             }
                         }
@@ -1684,16 +1704,18 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                             context.locale.send(sender, "general.player-not-found", "player" to query)
                         } else {
                             val (id, names) = res
-                            sender.sendMessage(TextFormatter.format("<gradient:#3b82f6:#8b5cf6><bold>Name History for ${id.name} (${names.size}):</bold></gradient>"))
+                            context.locale.sendRaw(
+                                sender,
+                                "moderation.namehistory-header",
+                                "player" to id.name,
+                                "count" to names.size,
+                            )
                             for (n in names) {
-                                sender.sendMessage(
-                                    TextFormatter.format(
-                                        "<gray>-</gray> <white>${n.username}</white> <dark_gray>(${
-                                            formatDate(
-                                                n.changedAt
-                                            )
-                                        })</dark_gray>"
-                                    )
+                                context.locale.sendRaw(
+                                    sender,
+                                    "moderation.namehistory-entry",
+                                    "username" to n.username,
+                                    "date" to formatDate(n.changedAt),
                                 )
                             }
                         }
@@ -1725,7 +1747,12 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                         if (uuid == null) {
                             context.locale.send(sender, "general.player-not-found", "player" to query)
                         } else {
-                            sender.sendMessage(TextFormatter.format("<gray>Last UUID for <white>$query</white>:</gray> <aqua>$uuid</aqua>"))
+                            context.locale.sendRaw(
+                                sender,
+                                "moderation.lastuuid-result",
+                                "query" to query,
+                                "uuid" to uuid
+                            )
                         }
                     },
                 )
@@ -1743,10 +1770,16 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                 if (onlineByIp.isEmpty()) {
                     context.locale.send(sender, "moderation.ipreport-none")
                 } else {
-                    sender.sendMessage(TextFormatter.format("<gradient:#f59e0b:#ef4444><bold>IP Report (Online Duplicate Accounts):</bold></gradient>"))
+                    context.locale.sendRaw(sender, "moderation.ipreport-header")
                     for ((ip, players) in onlineByIp) {
                         val names = players.joinToString(", ") { it.name }
-                        sender.sendMessage(TextFormatter.format("<white>$ip</white> <gray>(</gray><aqua>${players.size}</aqua><gray>):</gray> <white>$names</white>"))
+                        context.locale.sendRaw(
+                            sender,
+                            "moderation.ipreport-entry",
+                            "ip" to ip,
+                            "count" to players.size,
+                            "players" to names,
+                        )
                     }
                 }
                 Command.SINGLE_SUCCESS
@@ -1832,8 +1865,9 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
                                 if (res == null) {
                                     context.locale.send(sender, "general.player-not-found", "player" to query)
                                 } else {
-                                    val status =
-                                        if (res.second) "<green>ALLOWED</green>" else "<gray>NOT ALLOWED</gray>"
+                                    val status = context.locale.raw(
+                                        if (res.second) "moderation.allow-allowed" else "moderation.allow-not-allowed"
+                                    )
                                     context.locale.send(
                                         sender,
                                         "moderation.allow-status",
@@ -1892,7 +1926,7 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             lockdownNode,
             "Server lockdown management",
-            if (context.config.registerStandaloneAliases) listOf("llockdown") else emptyList(),
+            listOf("llockdown"),
         )
     }
 
@@ -1914,16 +1948,31 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             },
             onResult = { (total, list) ->
                 if (list.isEmpty() && page == 1) {
-                    sender.sendMessage(TextFormatter.format("<green>No active $title found.</green>"))
+                    context.locale.sendRaw(sender, "moderation.list-empty", "title" to title)
                     return@dispatchAsync
                 }
                 val maxPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
-                sender.sendMessage(TextFormatter.format("<gradient:#f59e0b:#ef4444><bold>Active $title (Page $page/$maxPages, Total $total):</bold></gradient>"))
+                context.locale.sendRaw(
+                    sender,
+                    "moderation.list-header",
+                    "title" to title,
+                    "page" to page,
+                    "maxPages" to maxPages,
+                    "total" to total,
+                )
                 for (rec in list) {
                     val target = rec.targetName ?: rec.targetIp ?: "Unknown"
                     val expires = DurationParser.formatExpiry(rec.expiresAt, rec.createdAt)
-                    val silentTag = if (rec.silent) "<dark_gray>[Silent]</dark_gray> " else ""
-                    sender.sendMessage(TextFormatter.format("$silentTag<gray>- <red>$target</red> by <yellow>${rec.actorName}</yellow><gray>: ${rec.reason} (<aqua>$expires</aqua>)</gray>"))
+                    val silentTag = if (rec.silent) context.locale.raw("moderation.silent-tag") else ""
+                    context.locale.sendRaw(
+                        sender,
+                        "moderation.list-entry",
+                        "silent" to silentTag,
+                        "target" to target,
+                        "actor" to rec.actorName,
+                        "reason" to rec.reason,
+                        "expires" to expires,
+                    )
                 }
             },
         )
@@ -1948,18 +1997,41 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             },
             onResult = { (name, total, list) ->
                 if (list.isEmpty() && page == 1) {
-                    sender.sendMessage(TextFormatter.format("<green>No punishment history found for <white>$name</white>.</green>"))
+                    context.locale.sendRaw(sender, "moderation.history-empty", "target" to name)
                     return@dispatchAsync
                 }
                 val maxPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
-                sender.sendMessage(TextFormatter.format("<gradient:#3b82f6:#8b5cf6><bold>Punishment History for $name (Page $page/$maxPages, Total $total):</bold></gradient>"))
+                context.locale.sendRaw(
+                    sender,
+                    "moderation.history-header",
+                    "target" to name,
+                    "page" to page,
+                    "maxPages" to maxPages,
+                    "total" to total,
+                )
                 for (rec in list) {
-                    val status = if (rec.active) "<green>ACTIVE</green>" else "<gray>EXPIRED</gray>"
-                    val silentTag = if (rec.silent) "<dark_gray>[Silent]</dark_gray> " else ""
+                    val status = context.locale.raw(
+                        if (rec.active) "moderation.status-active" else "moderation.status-expired"
+                    )
+                    val silentTag = if (rec.silent) context.locale.raw("moderation.silent-tag") else ""
                     val date = formatDate(rec.createdAt)
-                    sender.sendMessage(TextFormatter.format("$silentTag<gray>[<aqua>${rec.type}</aqua>]</gray> $status by <yellow>${rec.actorName}</yellow>: <white>${rec.reason}</white> <dark_gray>($date)</dark_gray>"))
+                    context.locale.sendRaw(
+                        sender,
+                        "moderation.history-entry",
+                        "silent" to silentTag,
+                        "type" to rec.type,
+                        "status" to status,
+                        "actor" to rec.actorName,
+                        "reason" to rec.reason,
+                        "date" to date,
+                    )
                     if (rec.removedByName != null) {
-                        sender.sendMessage(TextFormatter.format("  <dark_gray>└</dark_gray> <gray>Removed by <white>${rec.removedByName}</white>: ${rec.removedReason ?: "No reason"}</gray>"))
+                        context.locale.sendRaw(
+                            sender,
+                            "moderation.history-removed",
+                            "actor" to rec.removedByName,
+                            "reason" to (rec.removedReason ?: "-"),
+                        )
                     }
                 }
             },
@@ -1984,16 +2056,33 @@ class ModerationModule(private val context: ObsidianContext) : ObsidianModule {
             },
             onResult = { (total, list) ->
                 if (list.isEmpty() && page == 1) {
-                    sender.sendMessage(TextFormatter.format("<green>No punishments found issued by <white>$staffName</white>.</green>"))
+                    context.locale.sendRaw(sender, "moderation.staffhistory-empty", "staff" to staffName)
                     return@dispatchAsync
                 }
                 val maxPages = ((total + pageSize - 1) / pageSize).coerceAtLeast(1)
-                sender.sendMessage(TextFormatter.format("<gradient:#3b82f6:#8b5cf6><bold>Punishments by $staffName (Page $page/$maxPages, Total $total):</bold></gradient>"))
+                context.locale.sendRaw(
+                    sender,
+                    "moderation.staffhistory-header",
+                    "staff" to staffName,
+                    "page" to page,
+                    "maxPages" to maxPages,
+                    "total" to total,
+                )
                 for (rec in list) {
                     val target = rec.targetName ?: rec.targetIp ?: "Unknown"
-                    val status = if (rec.active) "<green>ACTIVE</green>" else "<gray>INACTIVE</gray>"
+                    val status = context.locale.raw(
+                        if (rec.active) "moderation.status-active" else "moderation.status-inactive"
+                    )
                     val date = formatDate(rec.createdAt)
-                    sender.sendMessage(TextFormatter.format("<gray>[<aqua>${rec.type}</aqua>]</gray> <white>$target</white> ($status)<gray>: ${rec.reason} ($date)</gray>"))
+                    context.locale.sendRaw(
+                        sender,
+                        "moderation.staffhistory-entry",
+                        "type" to rec.type,
+                        "target" to target,
+                        "status" to status,
+                        "reason" to rec.reason,
+                        "date" to date,
+                    )
                 }
             },
         )

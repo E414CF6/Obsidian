@@ -3,7 +3,9 @@ package obsidian.core
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import obsidian.core.command.CommandAliasService
 import obsidian.core.command.CooldownService
+import obsidian.core.command.ObsidianCommandRegistry
 import obsidian.core.command.WarmupService
 import obsidian.core.config.ObsidianConfig
 import obsidian.core.database.*
@@ -38,6 +40,8 @@ class ObsidianContext(val plugin: JavaPlugin) {
     val cooldowns = CooldownService(config)
     val warmups = WarmupService(config, locale, scheduler)
     val modules = ModuleRegistry(plugin, config)
+    val commandRegistry = ObsidianCommandRegistry()
+    val commandAliases = CommandAliasService(this)
 
     private val services = ConcurrentHashMap<Class<*>, Any>()
 
@@ -75,9 +79,11 @@ class ObsidianContext(val plugin: JavaPlugin) {
         cooldowns.reload()
         warmups.reload()
         modules.reloadAll()
+        commandAliases.reload()
     }
 
     fun shutdown() {
+        commandAliases.shutdown()
         modules.disableAll()
         users.flushAllBlocking()
         scheduler.shutdown()

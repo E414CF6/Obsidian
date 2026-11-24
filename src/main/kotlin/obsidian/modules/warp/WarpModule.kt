@@ -197,7 +197,7 @@ class WarpModule(
             context.plugin.pluginMeta,
             node,
             "Delete a server warp",
-            if (context.config.registerStandaloneAliases) listOf("delwarp") else emptyList(),
+            listOf("delwarp"),
         )
     }
 
@@ -215,7 +215,7 @@ class WarpModule(
             warpService.openWarpsGui(player, group = group)
         } else {
             val links = list.joinToString("<gray>, </gray>") { w ->
-                "<click:run_command:'/warp ${w.name}'><hover:show_text:'<green>Click to warp</green>'><aqua>${w.name}</aqua></hover></click>"
+                context.locale.raw("warp.list-entry", "name" to w.name)
             }
             player.sendMessage(context.locale.prefix().append(TextFormatter.format(links)))
         }

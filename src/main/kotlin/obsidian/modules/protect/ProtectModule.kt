@@ -137,7 +137,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                 if (!checkPerm(sender, "obsidian.protect.lookup")) return
                 val page = tail.firstOrNull()?.toIntOrNull()
                 if (page == null || page < 1) {
-                    sender.sendMessage(TextFormatter.format("<red>사용법: /co page <번호></red>"))
+                    context.locale.send(sender, "protect.usage-page")
                     return
                 }
                 engine.showPage(sender, page)
@@ -153,7 +153,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
             "rollback", "rb", "ro" -> {
                 if (!checkPerm(sender, "obsidian.protect.rollback")) return
                 if (tail.isEmpty()) {
-                    sender.sendMessage(TextFormatter.format("<red>사용법: /co rollback u:<대상> t:<시간> [r:<반경>] [a:<행동>] [#preview]</red>"))
+                    context.locale.send(sender, "protect.usage-rollback")
                     return
                 }
                 val parsed = parseForSender(sender, tail, defaultRadius = service.config.defaultRadius) ?: return
@@ -167,7 +167,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
             "restore", "rs", "re" -> {
                 if (!checkPerm(sender, "obsidian.protect.restore")) return
                 if (tail.isEmpty()) {
-                    sender.sendMessage(TextFormatter.format("<red>사용법: /co restore u:<대상> t:<시간> [r:<반경>] [a:<행동>] [#preview]</red>"))
+                    context.locale.send(sender, "protect.usage-restore")
                     return
                 }
                 val parsed = parseForSender(sender, tail, defaultRadius = service.config.defaultRadius) ?: return
@@ -200,7 +200,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                 val parsed = parseForSender(sender, tail, defaultRadius = null) ?: return
                 val cutoff = parsed.sinceMillis
                 if (cutoff == null) {
-                    sender.sendMessage(TextFormatter.format("<red>사용법: /co purge t:<보존기간> [r:<반경|월드>] (예: /co purge t:30d)</red>"))
+                    context.locale.send(sender, "protect.usage-purge")
                     return
                 }
                 val vacuum = tail.any { it.equals("#optimize", true) || it.equals("#vacuum", true) }
@@ -270,11 +270,15 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                     }
 
                     else -> {
-                        val state = if (queue.paused.get()) "PAUSED" else "ACTIVE"
-                        sender.sendMessage(
-                            context.locale.prefix().append(
-                                TextFormatter.format("<gray>Consumer: <aqua>$state</aqua> | Pending: <white>${queue.pendingBreakdown()}</white> | Total Flushed: <white>${queue.totalFlushed()}</white></gray>")
-                            )
+                        val state = context.locale.raw(
+                            if (queue.paused.get()) "protect.consumer-paused" else "protect.consumer-active"
+                        )
+                        context.locale.send(
+                            sender,
+                            "protect.consumer-status",
+                            "state" to state,
+                            "pending" to queue.pendingBreakdown(),
+                            "flushed" to queue.totalFlushed(),
                         )
                     }
                 }
@@ -284,7 +288,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                 if (!checkPerm(sender, "obsidian.protect.teleport")) return
                 val player = CommandHelper.requirePlayer(context, sender) ?: return
                 if (tail.size < 4) {
-                    sender.sendMessage(TextFormatter.format("<red>사용법: /co tp <월드> <x> <y> <z></red>"))
+                    context.locale.send(sender, "protect.usage-tp")
                     return
                 }
                 val world = Bukkit.getWorld(tail[0])
@@ -292,7 +296,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
                 val y = tail[2].toDoubleOrNull()
                 val z = tail[3].toDoubleOrNull()
                 if (world == null || x == null || y == null || z == null) {
-                    sender.sendMessage(TextFormatter.format("<red>올바르지 않은 월드 또는 좌표입니다.</red>"))
+                    context.locale.send(sender, "protect.invalid-tp-target")
                     return
                 }
                 player.teleportAsync(Location(world, x + 0.5, y, z + 0.5))
@@ -313,11 +317,7 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
             }
 
             else -> {
-                sender.sendMessage(
-                    context.locale.prefix().append(
-                        TextFormatter.format("<red>알 수 없는 /co 하위 명령어: <white>$sub</white>. <gray>/co help</gray> 를 확인하세요.</red>")
-                    )
-                )
+                context.locale.send(sender, "protect.unknown-subcommand", "sub" to sub)
             }
         }
     }
@@ -334,17 +334,19 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
             defaultRadius = defaultRadius,
             maxRadius = service.config.maxRadius,
         ).getOrElse { err ->
-            sender.sendMessage(
-                context.locale.prefix()
-                    .append(TextFormatter.format("<red>${TextFormatter.escape(err.message ?: "Invalid arguments")}</red>"))
+            context.locale.send(
+                sender,
+                "protect.error-wrapper",
+                "message" to TextFormatter.escape(err.message ?: context.locale.raw("protect.invalid-arguments")),
             )
             return null
         }
 
         return engine.attachSelectionIfRequested(sender, parsed).getOrElse { err ->
-            sender.sendMessage(
-                context.locale.prefix()
-                    .append(TextFormatter.format("<red>${TextFormatter.escape(err.message ?: "Selection error")}</red>"))
+            context.locale.send(
+                sender,
+                "protect.error-wrapper",
+                "message" to TextFormatter.escape(err.message ?: context.locale.raw("protect.selection-error")),
             )
             return null
         }
@@ -403,30 +405,12 @@ class ProtectModule(private val context: ObsidianContext) : ObsidianModule {
 
     private fun sendHelp(sender: CommandSender, args: List<String>) {
         val topic = args.firstOrNull()?.lowercase(Locale.ROOT)
-        sender.sendMessage(TextFormatter.format("<dark_gray>-----</dark_gray> <gradient:#7c3aed:#06b6d4><bold>Obsidian Protect Help</bold></gradient> <dark_gray>-----</dark_gray>"))
-        if (topic == "params") {
-            listOf(
-                "<aqua>u:<유저></aqua> <gray>- 대상 플레이어/액터 필터 (#tnt, #creeper 등)</gray>",
-                "<aqua>t:<시간></aqua> <gray>- 기간 필터 (예: 30m, 2h, 1d12h, 1d-2h)</gray>",
-                "<aqua>r:<반경></aqua> <gray>- 반경/월드 필터 (숫자, 월드명, #global, #selection)</gray>",
-                "<aqua>a:<행동></aqua> <gray>- block, +block, -block, container, click, kill, spawn, chat, command, session, sign</gray>",
-                "<aqua>i:<재질> / e:<제외재질></aqua> <gray>- 포함/제외 블록·아이템 필터</gray>",
-                "<aqua>f:<키워드></aqua> <gray>- 채팅/명령/표지판 문자열 검색</gray>",
-                "<aqua>#preview / #count</aqua> <gray>- 미리보기 또는 건수만 조회</gray>",
-            ).forEach { sender.sendMessage(TextFormatter.format(it)) }
-            return
+        context.locale.sendRaw(sender, "protect.help-header")
+        val lines = if (topic == "params") {
+            context.locale.rawList("protect.help-params")
+        } else {
+            context.locale.rawList("protect.help-commands")
         }
-        listOf(
-            "<aqua>/co inspect</aqua> <gray>(/co i) - 블록·상자 조사 모드 토글</gray>",
-            "<aqua>/co lookup <조건></aqua> <gray>(/co l) - 변경 이력 조회</gray>",
-            "<aqua>/co near [반경]</aqua> <gray>- 주변 이력 빠른 조회</gray>",
-            "<aqua>/co page <번호></aqua> <gray>- 조회 결과 페이지 이동</gray>",
-            "<aqua>/co rollback <조건></aqua> <gray>(/co rb) - 지정 시점 상태로 되돌리기</gray>",
-            "<aqua>/co restore <조건></aqua> <gray>(/co rs) - 롤백된 영역 다시 복구</gray>",
-            "<aqua>/co apply / cancel / undo</aqua> <gray>- #preview 적용/취소 또는 직전 작업 되돌리기</gray>",
-            "<aqua>/co purge t:<기간></aqua> <gray>- 오래된 기록 정리</gray>",
-            "<aqua>/co status / consumer</aqua> <gray>- DB 통계 및 비동기 큐 제어</gray>",
-            "<gray>매개변수 상세: <aqua>/co help params</aqua></gray>",
-        ).forEach { sender.sendMessage(TextFormatter.format(it)) }
+        lines.forEach { sender.sendMessage(TextFormatter.format(it)) }
     }
 }

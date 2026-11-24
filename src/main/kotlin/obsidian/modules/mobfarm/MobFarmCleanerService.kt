@@ -177,7 +177,7 @@ class MobFarmCleanerService(
 
         // Check group limit first
         if (groupRule != null && groupRule.use && groupLimit > -1) {
-            lowestMax = if (lowestMax < 0) groupLimit else minOf(lowestMax, groupLimit)
+            lowestMax = groupLimit
             val groupCandidates = candidates.filter { it.typeName.lowercase() in groupRule.types }
             val selection = selectExcess(
                 candidates = groupCandidates,
@@ -671,11 +671,11 @@ class MobFarmCleanerService(
         settings: MobFarmSettings,
     ): List<Entity> {
         val result = ArrayList<Entity>()
-        for (coord in coords) {
-            if (settings.isExcludedChunk(world.name, coord.x, coord.z)) continue
-            if (!world.isChunkLoaded(coord.x, coord.z)) continue
-            if (!Bukkit.isOwnedByCurrentRegion(world, coord.x, coord.z)) continue
-            val chunk = world.getChunkAt(coord.x, coord.z)
+        for ((x, z) in coords) {
+            if (settings.isExcludedChunk(world.name, x, z)) continue
+            if (!world.isChunkLoaded(x, z)) continue
+            if (!Bukkit.isOwnedByCurrentRegion(world, x, z)) continue
+            val chunk = world.getChunkAt(x, z)
             for (e in chunk.entities) {
                 result += e
             }

@@ -31,12 +31,11 @@ object CommandHelper {
         aliases: List<String> = emptyList(),
     ) {
         val node = nodeBuilder(primaryName).build()
-        val standaloneAliases = if (context.config.registerStandaloneAliases) aliases else emptyList()
         registrar.register(
             context.plugin.pluginMeta,
             node,
             description,
-            standaloneAliases,
+            aliases,
         )
     }
 
@@ -120,7 +119,7 @@ object CommandHelper {
             if (box != null) {
                 onResult(box.value)
             } else {
-                sender.sendMessage(TextFormatter.format("<red>Command timed out while querying database.</red>"))
+                context.locale.send(sender, "general.db-timeout")
             }
             return
         }
@@ -133,22 +132,23 @@ object CommandHelper {
     }
 
     /**
-     * Registers `/obsidian info`, `/obsidian reload`, and `/obsidian modules` administrative commands.
+     * Builds the `/obsidian` root command (`info`, `version`, `reload`, `modules`, `aliases`).
      */
-    fun registerRootCommand(registrar: Commands, context: ObsidianContext) {
+    fun buildRootCommand(context: ObsidianContext): LiteralArgumentBuilder<CommandSourceStack> {
         val sendInfo: (CommandSender) -> Int = { sender ->
             val active = context.modules.activeModules().joinToString(", ") { it.id }
-            sender.sendMessage(
-                context.locale.prefix().append(
-                    TextFormatter.format(
-                        "<gray>Obsidian <white>v${context.plugin.pluginMeta.version}</white> | DB: <white>${context.database.dialect}</white> | Lang: <white>${context.config.language}</white> | Modules: <aqua>$active</aqua></gray>"
-                    )
-                )
+            context.locale.send(
+                sender,
+                "general.info",
+                "version" to context.plugin.pluginMeta.version,
+                "dialect" to context.database.dialect,
+                "language" to context.config.language,
+                "modules" to active,
             )
             Command.SINGLE_SUCCESS
         }
 
-        val root = Commands.literal("obsidian").requires { it.sender.hasPermission("obsidian.command") }
+        return Commands.literal("obsidian").requires { it.sender.hasPermission("obsidian.command") }
             .executes { ctx -> sendInfo(ctx.source.sender) }.then(
                 Commands.literal("info").executes { ctx -> sendInfo(ctx.source.sender) }).then(
                 Commands.literal("version").executes { ctx -> sendInfo(ctx.source.sender) })
@@ -159,16 +159,37 @@ object CommandHelper {
             }).then(Commands.literal("modules").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
                 val sender = ctx.source.sender
                 context.modules.activeModules().forEach { mod ->
-                    sender.sendMessage(
-                        TextFormatter.format(" <dark_gray>•</dark_gray> <aqua>${mod.id}</aqua> <gray>- ${mod.description}</gray>")
+                    context.locale.sendRaw(
+                        sender,
+                        "general.module-entry",
+                        "id" to mod.id,
+                        "description" to mod.description,
                     )
                 }
                 Command.SINGLE_SUCCESS
-            }).build()
+            }).then(Commands.literal("aliases").requires { it.sender.hasPermission("obsidian.admin") }.executes { ctx ->
+                val sender = ctx.source.sender
+                val regular = context.commandAliases.getRegularAliases().values
+                val enabledCount = regular.count { it.enabled }
+                val customCount = context.commandAliases.getCustomAliases().size
+                context.locale.send(
+                    sender,
+                    "general.aliases-summary",
+                    "enabled" to enabledCount,
+                    "total" to regular.size,
+                    "custom" to customCount,
+                )
+                Command.SINGLE_SUCCESS
+            })
+    }
 
+    /**
+     * Registers `/obsidian info`, `/obsidian reload`, `/obsidian modules`, and `/obsidian aliases` administrative commands.
+     */
+    fun registerRootCommand(registrar: Commands, context: ObsidianContext) {
         registrar.register(
             context.plugin.pluginMeta,
-            root,
+            buildRootCommand(context).build(),
             "Obsidian core management command",
             listOf("obs"),
         )

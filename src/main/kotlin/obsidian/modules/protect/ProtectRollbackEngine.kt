@@ -157,9 +157,7 @@ class ProtectRollbackEngine(
         val from = (page - 1) * linesPerPage
         val to = min(total, from + linesPerPage)
 
-        sender.sendMessage(
-            TextFormatter.format("<dark_gray>-----</dark_gray> <gradient:#7c3aed:#06b6d4><bold>Obsidian Protect</bold></gradient> <gray>(${session.headerLabel})</gray> <dark_gray>-----</dark_gray>")
-        )
+        context.locale.sendRaw(sender, "protect.page-header", "label" to session.headerLabel)
         for (idx in from until to) {
             val line = session.lines[idx]
             val age = ProtectCommandParser.formatRelativeTime(line.time)
@@ -173,24 +171,44 @@ class ProtectRollbackEngine(
             val detailSuffix =
                 if (line.detail.isNotBlank()) " <dark_gray>(${TextFormatter.escape(line.detail)})</dark_gray>" else ""
             val tpCmd = "/co tp ${line.world} ${line.x} ${line.y} ${line.z}"
-            val coordsPart =
-                "<click:run_command:'$tpCmd'><hover:show_text:'<gray>클릭하여 이동: ${line.world} (${line.x}, ${line.y}, ${line.z})</gray>'><gray>(${line.x}/${line.y}/${line.z}/${line.world})</gray></hover></click>"
-            sender.sendMessage(
-                TextFormatter.format(
-                    "$strikeOpen<gray>$age</gray> <dark_gray>-</dark_gray> <aqua>${TextFormatter.escape(line.actor)}</aqua> <$actionColor>${line.verb}</$actionColor> <white>${
-                        TextFormatter.escape(
-                            line.subject
-                        )
-                    }</white>$detailSuffix $coordsPart$strikeClose"
-                )
+            val coordsPart = context.locale.raw(
+                "protect.page-coords",
+                "command" to tpCmd,
+                "world" to line.world,
+                "x" to line.x,
+                "y" to line.y,
+                "z" to line.z,
+            )
+            context.locale.sendRaw(
+                sender,
+                "protect.page-entry",
+                "strikeOpen" to strikeOpen,
+                "strikeClose" to strikeClose,
+                "age" to age,
+                "actor" to TextFormatter.escape(line.actor),
+                "actionColor" to actionColor,
+                "verb" to line.verb,
+                "subject" to TextFormatter.escape(line.subject),
+                "detail" to detailSuffix,
+                "coords" to coordsPart,
             )
         }
-        val prevPart =
-            if (page > 1) "<click:run_command:'/co page ${page - 1}'><aqua>◀ 이전</aqua></click>" else "<dark_gray>◀ 이전</dark_gray>"
-        val nextPart =
-            if (page < maxPage) "<click:run_command:'/co page ${page + 1}'><aqua>다음 ▶</aqua></click>" else "<dark_gray>다음 ▶</dark_gray>"
-        sender.sendMessage(
-            TextFormatter.format("$prevPart <dark_gray>|</dark_gray> <gray>Page <white>$page/$maxPage</white> (${total}건)</gray> <dark_gray>|</dark_gray> $nextPart")
+        val prevPart = context.locale.raw(
+            if (page > 1) "protect.page-prev-active" else "protect.page-prev-disabled",
+            "page" to (page - 1),
+        )
+        val nextPart = context.locale.raw(
+            if (page < maxPage) "protect.page-next-active" else "protect.page-next-disabled",
+            "page" to (page + 1),
+        )
+        context.locale.sendRaw(
+            sender,
+            "protect.page-footer",
+            "prev" to prevPart,
+            "page" to page,
+            "maxPage" to maxPage,
+            "total" to total,
+            "next" to nextPart,
         )
     }
 

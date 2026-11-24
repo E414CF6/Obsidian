@@ -89,7 +89,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             msgNode,
             "Send a private message",
-            if (context.config.registerStandaloneAliases) listOf("tell", "whisper", "w", "pm") else emptyList(),
+            listOf("tell", "whisper", "w", "pm"),
         )
 
         val replyNode = Commands.literal("reply")
@@ -109,7 +109,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             replyNode,
             "Reply to last private message",
-            if (context.config.registerStandaloneAliases) listOf("r") else emptyList(),
+            listOf("r"),
         )
 
         val msgToggleNode = Commands.literal("msgtoggle")
@@ -208,7 +208,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             clearChatNode,
             "Clear chat history for players",
-            if (context.config.registerStandaloneAliases) listOf("cc") else emptyList(),
+            listOf("cc"),
         )
     }
 
@@ -233,7 +233,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             staffMsgNode,
             "Send a message to staff chat",
-            if (context.config.registerStandaloneAliases) listOf("sc", "staffchat") else emptyList(),
+            listOf("sc", "staffchat"),
         )
 
         val helpOpNode = Commands.literal("helpop")
@@ -269,7 +269,7 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             bcNode,
             "Broadcast an announcement",
-            if (context.config.registerStandaloneAliases) listOf("bc") else emptyList(),
+            listOf("bc"),
         )
 
         val titleNode = Commands.literal("titlemsg")
@@ -369,15 +369,16 @@ class ChatModule(private val context: ObsidianContext) : ObsidianModule {
                         } else {
                             context.locale.send(player, "chat.mail-header", "count" to entries.size)
                             for (entry in entries) {
-                                val badge = if (entry.read) "<gray>" else "<gold>[NEW] "
-                                player.sendMessage(
-                                    TextFormatter.format(
-                                        "$badge<aqua>${entry.sender}</aqua> <dark_gray>(${
-                                            mailService.formatTimestamp(
-                                                entry.timestamp
-                                            )
-                                        })</dark_gray><gray>: <white>${entry.message}</white>"
-                                    )
+                                val badge = context.locale.raw(
+                                    if (entry.read) "chat.mail-badge-read" else "chat.mail-badge-new"
+                                )
+                                context.locale.sendRaw(
+                                    player,
+                                    "chat.mail-entry",
+                                    "badge" to badge,
+                                    "sender" to entry.sender,
+                                    "time" to mailService.formatTimestamp(entry.timestamp),
+                                    "message" to entry.message,
                                 )
                             }
                         }

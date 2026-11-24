@@ -8,7 +8,6 @@ import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
 import obsidian.core.database.StoredLocation
 import obsidian.core.module.ObsidianModule
-import obsidian.core.text.TextFormatter
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
@@ -207,7 +206,13 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                 context.locale.send(sender, "visual.portal-list-header", "count" to list.size)
                 list.forEach { p ->
                     val dest = p.targetWarp?.let { "warp:$it" } ?: p.targetLocation?.world ?: "commands"
-                    sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${p.name}</aqua> <gray>(${p.region.worldName} -> $dest)</gray>"))
+                    context.locale.sendRaw(
+                        sender,
+                        "visual.portal-list-entry",
+                        "name" to p.name,
+                        "world" to p.region.worldName,
+                        "dest" to dest,
+                    )
                 }
                 Command.SINGLE_SUCCESS
             }.build()
@@ -227,7 +232,13 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                     context.locale.send(sender, "visual.hologram-list-header", "count" to all.size)
                     all.forEach { h ->
-                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${h.id}</aqua> <gray>(${h.location.world}, ${h.lines.size} lines)</gray>"))
+                        context.locale.sendRaw(
+                            sender,
+                            "visual.hologram-list-entry",
+                            "id" to h.id,
+                            "world" to h.location.world,
+                            "lines" to h.lines.size,
+                        )
                     }
                     Command.SINGLE_SUCCESS
                 })
@@ -397,7 +408,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Manage TextDisplay holograms",
-            if (context.config.registerStandaloneAliases) listOf("holo", "holos") else emptyList(),
+            listOf("holo", "holos"),
         )
     }
 
@@ -460,7 +471,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Edit targeted ArmorStand properties",
-            if (context.config.registerStandaloneAliases) listOf("armorstand") else emptyList(),
+            listOf("armorstand"),
         )
     }
 
@@ -498,7 +509,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             signEditNode,
             "Edit a sign line in place",
-            if (context.config.registerStandaloneAliases) listOf("se") else emptyList(),
+            listOf("se"),
         )
 
         val dsignNode = Commands.literal("dsign")
@@ -513,7 +524,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                     context.locale.send(sender, "visual.dsign-list-header", "count" to all.size)
                     all.forEach { d ->
-                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${d.key}</aqua>"))
+                        context.locale.sendRaw(sender, "visual.dsign-list-entry", "key" to d.key)
                     }
                     Command.SINGLE_SUCCESS
                 })

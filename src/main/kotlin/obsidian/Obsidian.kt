@@ -3,6 +3,7 @@ package obsidian
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import obsidian.core.ObsidianContext
 import obsidian.core.command.CommandHelper
+import obsidian.core.command.ObsidianCommandRegistrar
 import obsidian.core.gui.MenuListener
 import obsidian.integration.PlaceholderApiHook
 import obsidian.integration.PlaceholderService
@@ -46,6 +47,7 @@ class ObsidianPlugin : JavaPlugin() {
         val pm = Bukkit.getPluginManager()
         pm.registerEvents(ctx.users, this)
         pm.registerEvents(ctx.warmups, this)
+        pm.registerEvents(ctx.commandAliases, this)
         pm.registerEvents(MenuListener(), this)
 
         // Register Phase 1-4 modules in dependency order
@@ -92,11 +94,22 @@ class ObsidianPlugin : JavaPlugin() {
             }
         }
 
-        // Register Brigadier commands via Paper LifecycleEvents
+        // Register only the /obsidian (/obs) root command directly; all module commands are attached
+        // as /obsidian <subcommand> and exposed as standalone aliases via CommandAliasService (CMI-style).
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
             val registrar = event.registrar()
-            CommandHelper.registerRootCommand(registrar, ctx)
-            ctx.modules.registerAllCommands(registrar)
+            ctx.commandRegistry.clear()
+            val interceptingRegistrar = ObsidianCommandRegistrar(registrar, ctx.commandRegistry)
+            ctx.modules.registerAllCommands(interceptingRegistrar)
+
+            val rootNode = ctx.commandRegistry.buildRootNode(CommandHelper.buildRootCommand(ctx))
+            registrar.register(
+                pluginMeta,
+                rootNode,
+                "Obsidian core management command",
+                listOf("obs"),
+            )
+            ctx.commandAliases.initializeFromRegistry()
         }
 
         ctx.startAutoSave()

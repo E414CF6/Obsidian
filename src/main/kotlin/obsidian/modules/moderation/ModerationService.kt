@@ -363,7 +363,7 @@ class ModerationService(private val context: ObsidianContext) {
             }
         }
 
-        val prefix = if (record.silent) "<dark_gray>[<red>Silent</red>]</dark_gray> " else ""
+        val prefix = if (record.silent) context.locale.raw("moderation.silent-tag") else ""
         val broadcast = TextFormatter.format(
             prefix + context.locale.raw("moderation.ban-broadcast"),
             mapOf(
@@ -1025,26 +1025,50 @@ class ModerationService(private val context: ObsidianContext) {
         val eco = context.getService<EconomyService>()
         val rankSvc = context.getService<RankService>()
         val ptRec = rankSvc?.getOrLoadSnapshot(profile.uuid, profile.username)
-        val status = if (online != null) "<green>ONLINE</green>" else "<gray>OFFLINE</gray>"
+        val status = context.locale.raw(if (online != null) "moderation.status-online" else "moderation.status-offline")
         return buildList {
-            add("<gradient:#7c3aed:#06b6d4><bold>Player Info: ${profile.username}</bold></gradient>")
-            add("<gray>UUID:</gray> <white>${profile.uuid}</white>")
-            add("<gray>Status:</gray> $status" + (ip?.let { " <dark_gray>|</dark_gray> <gray>IP:</gray> <white>$it</white>" }
-                ?: ""))
+            add(context.locale.raw("moderation.whois-header", "player" to profile.username))
+            add(context.locale.raw("moderation.whois-uuid", "uuid" to profile.uuid))
+            add(
+                if (ip != null) {
+                    context.locale.raw("moderation.whois-status-ip", "status" to status, "ip" to ip)
+                } else {
+                    context.locale.raw("moderation.whois-status", "status" to status)
+                }
+            )
             if (eco != null) {
-                add("<gray>Balance:</gray> <gold>${eco.formatMoney(eco.getBalance(profile.uuid))}</gold>")
+                add(
+                    context.locale.raw(
+                        "moderation.whois-balance",
+                        "balance" to eco.formatMoney(eco.getBalance(profile.uuid))
+                    )
+                )
             }
             if (ptRec != null) {
-                add("<gray>PlayTime:</gray> <aqua>${TextFormatter.formatDuration(ptRec.totalMillis)}</aqua> <dark_gray>|</dark_gray> <gray>Rank:</gray> <aqua>${ptRec.currentRank}</aqua>")
+                add(
+                    context.locale.raw(
+                        "moderation.whois-playtime",
+                        "playtime" to TextFormatter.formatDuration(ptRec.totalMillis),
+                        "rank" to ptRec.currentRank,
+                    )
+                )
             }
             add(
-                "<gray>God:</gray> ${profile.godMode} <dark_gray>|</dark_gray> <gray>Fly:</gray> ${profile.flyMode} <dark_gray>|</dark_gray> <gray>Vanished:</gray> ${
-                    isVanished(
-                        profile.uuid
-                    )
-                }"
+                context.locale.raw(
+                    "moderation.whois-modes",
+                    "god" to profile.godMode,
+                    "fly" to profile.flyMode,
+                    "vanished" to isVanished(profile.uuid),
+                )
             )
-            add("<gray>Warnings:</gray> <yellow>$warningsCount</yellow> <dark_gray>|</dark_gray> <gray>Muted:</gray> ${activeMute != null} <dark_gray>|</dark_gray> <gray>Jailed:</gray> ${activeJail != null}")
+            add(
+                context.locale.raw(
+                    "moderation.whois-punishments",
+                    "warnings" to warningsCount,
+                    "muted" to (activeMute != null),
+                    "jailed" to (activeJail != null),
+                )
+            )
         }
     }
 

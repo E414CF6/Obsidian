@@ -48,7 +48,7 @@ Base administrative commands: `/obsidian [info|version|reload|modules]`.
 - **Paper Brigadier Commands:** Commands are registered through Paper's `LifecycleEvents.COMMANDS` with shared cooldowns
   (`commands.cooldowns`) and movement-aware warmups (`commands.warmups`).
 - **MiniMessage & Bilingual Locales:** Full Kyori Adventure MiniMessage support with built-in English
-  (`messages_en.yml`) and Korean (`messages_ko.yml`) translations selectable via `language:` in `config.yml`.
+  (`locales/en_us.yml`) and Korean (`locales/ko_kr.yml`) translations selectable via `language:` in `config.yml`.
 - **Integrations:**
     - **Vault:** Registers Obsidian as a Vault `Economy` provider when `economy` is enabled.
     - **PlaceholderAPI:** Registers `%obsidian_*%` placeholders (balance, formatted balance, playtime, rank, AFK/vanish
@@ -69,7 +69,7 @@ On first startup, Obsidian extracts default configuration files into `plugins/Ob
 - `schedules.yml` — Recurring automated command tasks
 - `eventactions.yml` — Event-driven commands (e.g., join/quit/first-join hooks)
 - `mobfarm.yml` — MobFarm entity/group limits, spawn reasons, auto-cleaner, hopper throttling, redstone tracking, and block limits
-- `messages_en.yml` / `messages_ko.yml` — Localized MiniMessage strings
+- `locales/en_us.yml` / `locales/ko_kr.yml` — Localized MiniMessage strings
 
 ## Embedded Stats HTTP API & Web Dashboard
 
@@ -149,7 +149,7 @@ Obsidian/
 │   │   │   ├── core/           # Config, commands, database, GUI, locale, scheduler, text, users
 │   │   │   ├── integration/    # Vault, PlaceholderAPI, LuckPerms, Discord hooks
 │   │   │   └── modules/        # 15 feature modules (teleport .. protect, stats)
-│   │   └── resources/          # plugin.yml, config.yml, messages_*.yml, module defaults
+│   │   └── resources/          # plugin.yml, config.yml, locales/*.yml, module defaults
 │   └── test/kotlin/obsidian/   # JUnit 5 unit & SQLite/HTTP integration tests
 └── web/                        # Companion Next.js statistics dashboard
 ```

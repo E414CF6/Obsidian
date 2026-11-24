@@ -109,7 +109,7 @@ class KitModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             kitNode,
             "Claim or browse kits",
-            if (context.config.registerStandaloneAliases) listOf("kits") else emptyList(),
+            listOf("kits"),
         )
 
         val editorNode = Commands.literal("kiteditor")

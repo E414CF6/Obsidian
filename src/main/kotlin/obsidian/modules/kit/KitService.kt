@@ -234,15 +234,15 @@ class KitService(private val context: ObsidianContext) : Listener {
                 val rem =
                     if (claim != null) (claim.lastClaimedAt + kit.cooldownSeconds * 1000L - now).coerceAtLeast(0L) else 0L
                 if (rem > 0L) {
-                    lore += "<red>Cooldown: ${TextFormatter.formatDuration(rem)}</red>"
+                    lore += context.locale.raw("kit.gui-cooldown", "time" to TextFormatter.formatDuration(rem))
                 } else {
-                    lore += "<green>Ready to claim</green>"
+                    lore += context.locale.raw("kit.gui-ready")
                 }
             }
             if (kit.cost > 0.0 && eco != null) {
-                lore += "<gold>Cost: ${eco.formatMoney(kit.cost)}</gold>"
+                lore += context.locale.raw("kit.gui-cost", "cost" to eco.formatMoney(kit.cost))
             }
-            lore += "<gray>Click to claim</gray>"
+            lore += context.locale.raw("kit.gui-click")
 
             window.set(slot, MenuItems.item(kit.iconMaterial, kit.displayName, lore)) {
                 player.closeInventory()

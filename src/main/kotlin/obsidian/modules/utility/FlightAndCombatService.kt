@@ -201,22 +201,40 @@ class FlightAndCombatService(private val context: ObsidianContext) : Listener {
         fun toggleItem(material: Material, name: String, enabled: Boolean): ItemStack {
             return ItemStack(material).apply {
                 val m = itemMeta
-                val status = if (enabled) "<green>ON</green>" else "<red>OFF</red>"
-                m.displayName(TextFormatter.format("<aqua>$name</aqua> <gray>[$status<gray>]"))
-                m.lore(listOf(TextFormatter.format("<gray>Click to toggle</gray>")))
+                val status = context.locale.raw(if (enabled) "general.state-on" else "general.state-off")
+                m.displayName(
+                    context.locale.component(
+                        "utility.options-item-name",
+                        mapOf("name" to name, "state" to status),
+                    )
+                )
+                m.lore(listOf(context.locale.component("utility.options-click-toggle")))
                 itemMeta = m
             }
         }
 
-        window.set(10, toggleItem(Material.REDSTONE, "BossBar HP Indicator", isHpBarEnabled(player))) {
+        window.set(
+            10,
+            toggleItem(Material.REDSTONE, context.locale.raw("utility.options-hp-bar"), isHpBarEnabled(player))
+        ) {
             setHpBarEnabled(player, !isHpBarEnabled(player))
             openOptionsGui(player)
         }
-        window.set(12, toggleItem(Material.ELYTRA, "Elytra Boost", isElytraBoostEnabled(player))) {
+        window.set(
+            12,
+            toggleItem(
+                Material.ELYTRA,
+                context.locale.raw("utility.options-elytra-boost"),
+                isElytraBoostEnabled(player)
+            )
+        ) {
             setElytraBoostEnabled(player, !isElytraBoostEnabled(player))
             openOptionsGui(player)
         }
-        window.set(14, toggleItem(Material.FEATHER, "Flight Auto-Recharge", isAutoRecharge(player))) {
+        window.set(
+            14,
+            toggleItem(Material.FEATHER, context.locale.raw("utility.options-auto-recharge"), isAutoRecharge(player))
+        ) {
             setAutoRecharge(player, !isAutoRecharge(player))
             openOptionsGui(player)
         }

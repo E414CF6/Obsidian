@@ -87,9 +87,18 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
                     }
                     context.locale.send(sender, "automation.schedule-header", "count" to all.size)
                     all.forEach { job ->
-                        val state = if (job.enabled) "<green>ON</green>" else "<red>OFF</red>"
-                        val timing = job.dailyAt?.let { "daily $it" } ?: "every ${job.intervalSeconds}s"
-                        sender.sendMessage(TextFormatter.format(" <dark_gray>-</dark_gray> <aqua>${job.id}</aqua> [$state] <gray>($timing, ${job.commands.size} cmds)</gray>"))
+                        val state = context.locale.raw(if (job.enabled) "general.state-on" else "general.state-off")
+                        val timing = job.dailyAt?.let {
+                            context.locale.raw("automation.schedule-timing-daily", "time" to it)
+                        } ?: context.locale.raw("automation.schedule-timing-interval", "seconds" to job.intervalSeconds)
+                        context.locale.sendRaw(
+                            sender,
+                            "automation.schedule-entry",
+                            "id" to job.id,
+                            "state" to state,
+                            "timing" to timing,
+                            "commands" to job.commands.size,
+                        )
                     }
                     Command.SINGLE_SUCCESS
                 })
@@ -164,32 +173,29 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
                 val chunks = Bukkit.getWorlds().sumOf { it.loadedChunks.size }
                 val entities = Bukkit.getWorlds().sumOf { it.entityCount }
 
-                sender.sendMessage(TextFormatter.format("<gradient:#7c3aed:#06b6d4><bold>Obsidian Server Status</bold></gradient>"))
-                sender.sendMessage(
-                    TextFormatter.format(
-                        " <gray>TPS (1m/5m/15m):</gray> <green>${"%.2f".format(tps.getOrElse(0) { 20.0 })}</green><gray>, </gray><green>${
-                            "%.2f".format(
-                                tps.getOrElse(1) { 20.0 })
-                        }</green><gray>, </gray><green>${"%.2f".format(tps.getOrElse(2) { 20.0 })}</green> <gray>| MSPT:</gray> <aqua>${
-                            "%.2f".format(
-                                mspt
-                            )
-                        }ms</aqua>"
-                    )
+                context.locale.sendRaw(sender, "automation.status-header")
+                context.locale.sendRaw(
+                    sender,
+                    "automation.status-tps",
+                    "tps1" to "%.2f".format(tps.getOrElse(0) { 20.0 }),
+                    "tps5" to "%.2f".format(tps.getOrElse(1) { 20.0 }),
+                    "tps15" to "%.2f".format(tps.getOrElse(2) { 20.0 }),
+                    "mspt" to "%.2f".format(mspt),
                 )
-                sender.sendMessage(
-                    TextFormatter.format(
-                        " <gray>Memory:</gray> <yellow>${usedMb}MB</yellow> <gray>/</gray> <white>${maxMb}MB</white> <gray>| Uptime:</gray> <aqua>${
-                            TextFormatter.formatDuration(
-                                uptimeSec * 1000L
-                            )
-                        }</aqua>"
-                    )
+                context.locale.sendRaw(
+                    sender,
+                    "automation.status-memory",
+                    "used" to usedMb,
+                    "max" to maxMb,
+                    "uptime" to TextFormatter.formatDuration(uptimeSec * 1000L),
                 )
-                sender.sendMessage(
-                    TextFormatter.format(
-                        " <gray>Players:</gray> <aqua>${Bukkit.getOnlinePlayers().size}/${Bukkit.getMaxPlayers()}</aqua> <gray>| Chunks:</gray> <white>$chunks</white> <gray>| Entities:</gray> <white>$entities</white>"
-                    )
+                context.locale.sendRaw(
+                    sender,
+                    "automation.status-world",
+                    "online" to Bukkit.getOnlinePlayers().size,
+                    "max" to Bukkit.getMaxPlayers(),
+                    "chunks" to chunks,
+                    "entities" to entities,
                 )
                 Command.SINGLE_SUCCESS
             }.build()
@@ -197,7 +203,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Show server TPS, MSPT, memory, and loaded world metrics",
-            if (context.config.registerStandaloneAliases) listOf("tps") else emptyList(),
+            listOf("tps"),
         )
     }
 
@@ -221,7 +227,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             gcNode,
             "Remove dropped ground items across loaded worlds",
-            if (context.config.registerStandaloneAliases) listOf("cleanitems") else emptyList(),
+            listOf("cleanitems"),
         )
 
         val killAllNode = Commands.literal("killall")
@@ -346,14 +352,11 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
                 } else {
                     context.locale.send(ctx.source.sender, "automation.alias-header", "count" to all.size)
                     for ((name, cmds) in all) {
-                        ctx.source.sender.sendMessage(
-                            TextFormatter.format(
-                                "<gray>-</gray> <aqua>/$name</aqua> <dark_gray>→</dark_gray> <white>${
-                                    cmds.joinToString(
-                                        " && "
-                                    )
-                                }</white>"
-                            )
+                        context.locale.sendRaw(
+                            ctx.source.sender,
+                            "automation.alias-entry",
+                            "name" to name,
+                            "commands" to cmds.joinToString(" && "),
                         )
                     }
                 }
@@ -399,7 +402,7 @@ class AutomationModule(private val context: ObsidianContext) : ObsidianModule {
             context.plugin.pluginMeta,
             node,
             "Manage custom command aliases",
-            if (context.config.registerStandaloneAliases) listOf("alias") else emptyList(),
+            listOf("alias"),
         )
     }
 }
