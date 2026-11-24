@@ -1645,7 +1645,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                     val rowStr = shape[r]
                     for (c in rowStr.indices) {
                         val ch = rowStr[c]
-                        val ing = recipe.choiceMap[ch]?.itemStack
+                        val ing = choiceDisplayItem(recipe.choiceMap[ch])
                         if (ing != null && !ing.type.isAir) {
                             window.set((r + 1) * 9 + (c + 1), ing)
                         }
@@ -1656,18 +1656,28 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             is org.bukkit.inventory.ShapelessRecipe -> {
                 recipe.choiceList.forEachIndexed { idx, choice ->
                     val targetSlot = gridSlots.getOrNull(idx) ?: return@forEachIndexed
-                    window.set(targetSlot, choice.itemStack)
+                    val ing = choiceDisplayItem(choice) ?: return@forEachIndexed
+                    window.set(targetSlot, ing)
                 }
             }
 
             is org.bukkit.inventory.FurnaceRecipe -> {
-                window.set(20, recipe.inputChoice.itemStack)
+                choiceDisplayItem(recipe.inputChoice)?.let { window.set(20, it) }
             }
         }
         window.set(23, MenuItems.item(Material.CRAFTING_TABLE, "<yellow>→</yellow>"))
         window.set(25, recipe.result)
         window.set(40, MenuItems.backButton(context)) { openCustomRecipesGui(player) }
         window.open(player)
+    }
+
+    private fun choiceDisplayItem(choice: org.bukkit.inventory.RecipeChoice?): ItemStack? = when (choice) {
+        is org.bukkit.inventory.RecipeChoice.MaterialChoice -> choice.choices.firstOrNull()?.let { ItemStack(it) }
+        is org.bukkit.inventory.RecipeChoice.ExactChoice -> choice.choices.firstOrNull()?.clone()
+        is org.bukkit.inventory.RecipeChoice.ItemTypeChoice -> choice.itemTypes()
+            .resolve(RegistryAccess.registryAccess().getRegistry(RegistryKey.ITEM)).firstOrNull()?.createItemStack()
+
+        else -> null
     }
 
     private fun registerScavenger(registrar: Commands) {
@@ -1707,7 +1717,11 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                 val hand = requireHeldItem(player) ?: return@executes 0
                 val meta = hand.itemMeta
                 val damageMeta = meta as? org.bukkit.inventory.meta.Damageable
-                val customModel = meta?.customModelData ?: 0
+                val customModel = if (meta != null && meta.hasCustomModelDataComponent()) {
+                    meta.customModelDataComponent.floats.firstOrNull()?.toInt() ?: 0
+                } else {
+                    0
+                }
                 val enchants = hand.enchantments.map { "${it.key.key.key}:${it.value}" }.ifEmpty { listOf("none") }
                     .joinToString(", ")
                 context.locale.send(
@@ -2145,22 +2159,20 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         )
 
         // /trim <material> <pattern>
+        val trimMatReg = RegistryAccess.registryAccess().getRegistry(RegistryKey.TRIM_MATERIAL)
+        val trimPatReg = RegistryAccess.registryAccess().getRegistry(RegistryKey.TRIM_PATTERN)
         val trimNode = Commands.literal("trim")
             .requires { it.sender.hasPermission("obsidian.command.trim") || it.sender.hasPermission("obsidian.admin") }
             .then(
                 Commands.argument("material", StringArgumentType.word()).suggests { _, b ->
-                    RegistryAccess.registryAccess()
-                        .getRegistry(RegistryKey.TRIM_MATERIAL)
-                        .map { it.key.key }
+                    trimMatReg.keyStream().map { it.key }
                         .filter { it.startsWith(b.remaining, true) }
                         .sorted()
                         .forEach(b::suggest)
                     b.buildFuture()
                 }.then(
                     Commands.argument("pattern", StringArgumentType.word()).suggests { _, b ->
-                        RegistryAccess.registryAccess()
-                            .getRegistry(RegistryKey.TRIM_PATTERN)
-                            .map { it.key.key }
+                        trimPatReg.keyStream().map { it.key }
                             .filter { it.startsWith(b.remaining, true) }
                             .sorted()
                             .forEach(b::suggest)
@@ -2187,8 +2199,8 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                         context.locale.send(
                             player,
                             "utility.trim-applied",
-                            "material" to mat.key.key,
-                            "pattern" to pat.key.key
+                            "material" to trimMatReg.getKeyOrThrow(mat).key,
+                            "pattern" to trimPatReg.getKeyOrThrow(pat).key
                         )
                         Command.SINGLE_SUCCESS
                     }
@@ -2440,23 +2452,25 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 val sender = ctx.source.sender
                 val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
+                val gameRuleRegistry = RegistryAccess.registryAccess().getRegistry(RegistryKey.GAME_RULE)
                 context.locale.sendRaw(
                     sender,
                     "utility.gamerule-list",
                     "world" to world.name,
-                    "rules" to GameRule.values().take(12)
-                        .joinToString(", ") { "${it.name}=${world.getGameRuleValue(it)}" },
+                    "rules" to gameRuleRegistry.take(12)
+                        .joinToString(", ") { "${it.key().value()}=${world.getGameRuleValue(it)}" },
                 )
                 Command.SINGLE_SUCCESS
             }.then(
                 Commands.argument("rule", StringArgumentType.word()).suggests { _, b ->
-                    GameRule.values().map { it.name }.filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
+                    RegistryAccess.registryAccess().getRegistry(RegistryKey.GAME_RULE).map { it.key().value() }
+                        .filter { it.startsWith(b.remaining, true) }.forEach(b::suggest)
                     b.buildFuture()
                 }.executes { ctx ->
                     val sender = ctx.source.sender
                     val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
                     val ruleName = StringArgumentType.getString(ctx, "rule")
-                    val rule: GameRule<Any>? = GameRule.getByName<Any>(ruleName)
+                    val rule = resolveGameRule(ruleName)
                     if (rule == null) {
                         context.locale.send(sender, "utility.gamerule-invalid", "rule" to ruleName)
                         return@executes 0
@@ -2465,8 +2479,8 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                         sender,
                         "utility.gamerule-value",
                         "world" to world.name,
-                        "rule" to rule.name,
-                        "value" to (world.getGameRuleValue(rule).toString() ?: "null"),
+                        "rule" to rule.key().value(),
+                        "value" to world.getGameRuleValue(rule).toString(),
                     )
                     Command.SINGLE_SUCCESS
                 }.then(
@@ -2475,7 +2489,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                         val world = (sender as? Player)?.world ?: Bukkit.getWorlds().firstOrNull() ?: return@executes 0
                         val ruleName = StringArgumentType.getString(ctx, "rule")
                         val rawVal = StringArgumentType.getString(ctx, "value")
-                        val rule: GameRule<Any>? = GameRule.getByName<Any>(ruleName)
+                        val rule = resolveGameRule(ruleName)
                         if (rule == null) {
                             context.locale.send(sender, "utility.gamerule-invalid", "rule" to ruleName)
                             return@executes 0
@@ -2483,12 +2497,12 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                         context.scheduler.runGlobal {
                             @Suppress("UNCHECKED_CAST")
                             val ok = when (rule.type) {
-                                java.lang.Boolean::class.java, Boolean::class.java -> {
+                                Boolean::class.javaObjectType, Boolean::class.java -> {
                                     val b = rawVal.toBooleanStrictOrNull()
                                     if (b != null) world.setGameRule(rule as GameRule<Boolean>, b) else false
                                 }
 
-                                Integer::class.java, Int::class.java -> {
+                                Int::class.javaObjectType, Int::class.java -> {
                                     val i = rawVal.toIntOrNull()
                                     if (i != null) world.setGameRule(rule as GameRule<Int>, i) else false
                                 }
@@ -2500,7 +2514,7 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
                                     sender,
                                     "utility.gamerule-set",
                                     "world" to world.name,
-                                    "rule" to rule.name,
+                                    "rule" to rule.key().value(),
                                     "value" to rawVal,
                                 )
                             } else {
@@ -3135,5 +3149,18 @@ class UtilityModule(private val context: ObsidianContext) : ObsidianModule {
         context.locale.sendRaw(sender, "utility.recipe-header", "item" to stack.type.name.lowercase())
         lines.forEach { sender.sendMessage(Component.text(it)) }
         return Command.SINGLE_SUCCESS
+    }
+
+    private fun resolveGameRule(name: String): GameRule<*>? {
+        val registry = RegistryAccess.registryAccess().getRegistry(RegistryKey.GAME_RULE)
+        val direct = runCatching {
+            val key = if (':' in name) Key.key(name.lowercase()) else Key.key("minecraft", name.lowercase())
+            registry.get(key)
+        }.getOrNull()
+        if (direct != null) return direct
+        return registry.firstOrNull {
+            it.key().value().equals(name, ignoreCase = true) || it.key().value().replace("_", "")
+                .equals(name.replace("_", ""), ignoreCase = true)
+        }
     }
 }

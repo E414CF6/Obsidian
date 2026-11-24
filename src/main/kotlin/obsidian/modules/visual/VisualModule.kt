@@ -20,7 +20,6 @@ import obsidian.core.ui.DialogBuilder
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
-import org.bukkit.Registry
 import org.bukkit.block.CreatureSpawner
 import org.bukkit.block.sign.Side
 import org.bukkit.entity.Display
@@ -906,29 +905,31 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
         registrar.register(context.plugin.pluginMeta, spawnerNode, "Change target spawner entity type", emptyList())
 
         // /findbiome <biome>
+        val biomeRegistry = RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME)
         val findBiomeNode = Commands.literal("findbiome")
             .requires { it.sender.hasPermission("obsidian.command.findbiome") || it.sender.hasPermission("obsidian.admin") }
             .then(Commands.argument("biome", StringArgumentType.word()).suggests { _, b ->
-                Registry.BIOME.asSequence().map { it.key.key }
+                biomeRegistry.asSequence().map { it.key().value() }
                     .filter { it.startsWith(b.remaining, true) }.take(40).forEach { b.suggest(it) }
                 b.buildFuture()
             }.executes { ctx ->
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val raw = StringArgumentType.getString(ctx, "biome").lowercase()
-                val targetBiome = Registry.BIOME.firstOrNull {
-                    it.key.key.equals(raw, true) || it.key.asString().equals(raw, true)
+                val targetBiome = biomeRegistry.firstOrNull {
+                    it.key().value().equals(raw, true) || it.key().asString().equals(raw, true)
                 } ?: run {
                     context.locale.send(player, "visual.biome-invalid", "biome" to raw)
                     return@executes 0
                 }
                 val startLoc = player.location.clone()
                 val world = startLoc.world ?: return@executes 0
-                context.locale.send(player, "visual.biome-searching", "biome" to targetBiome.key.key)
+                val biomeKeyName = targetBiome.key().value()
+                context.locale.send(player, "visual.biome-searching", "biome" to biomeKeyName)
                 val barId = "findbiome_${player.uniqueId}"
                 context.bossBar.showStatic(
                     player = player,
                     id = barId,
-                    title = context.locale.component("visual.biome-bossbar", mapOf("biome" to targetBiome.key.key)),
+                    title = context.locale.component("visual.biome-bossbar", mapOf("biome" to biomeKeyName)),
                     progress = 0.1f,
                     color = BossBar.Color.BLUE,
                 )
@@ -946,8 +947,7 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                                 player = player,
                                 id = barId,
                                 title = context.locale.component(
-                                    "visual.biome-bossbar",
-                                    mapOf("biome" to targetBiome.key.key)
+                                    "visual.biome-bossbar", mapOf("biome" to biomeKeyName)
                                 ),
                                 progress = (r.toFloat() / maxRadius.toFloat()).coerceIn(0f, 1f),
                                 color = BossBar.Color.BLUE,
@@ -974,19 +974,19 @@ class VisualModule(private val context: ObsidianContext) : ObsidianModule {
                         context.bossBar.hide(player, barId)
                         if (!player.isOnline) return@runForEntity
                         if (found == null) {
-                            context.locale.send(player, "visual.biome-not-found", "biome" to targetBiome.key.key)
+                            context.locale.send(player, "visual.biome-not-found", "biome" to biomeKeyName)
                         } else {
                             context.locale.send(
                                 player,
                                 "visual.biome-found",
-                                "biome" to targetBiome.key.key,
+                                "biome" to biomeKeyName,
                                 "x" to found.blockX,
                                 "z" to found.blockZ,
                             )
                             context.actionBar.pushTransientLocale(
                                 player,
                                 "visual.biome-actionbar",
-                                "biome" to targetBiome.key.key,
+                                "biome" to biomeKeyName,
                                 "x" to found.blockX,
                                 "z" to found.blockZ,
                             )
