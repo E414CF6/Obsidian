@@ -18,7 +18,7 @@ import org.bukkit.inventory.meta.Repairable
 import org.bukkit.inventory.meta.trim.ArmorTrim
 import org.bukkit.inventory.meta.trim.TrimMaterial
 import org.bukkit.inventory.meta.trim.TrimPattern
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -54,7 +54,7 @@ class AnvilAndEnchantService(private val context: ObsidianContext) : Listener {
 
     fun isEnchantDisabled(enchant: Enchantment): Boolean =
         disabledEnchants.contains(enchant.key.key.lowercase(Locale.ROOT)) ||
-            disabledEnchants.contains(enchant.key.toString().lowercase(Locale.ROOT))
+                disabledEnchants.contains(enchant.key.toString().lowercase(Locale.ROOT))
 
     fun toggleDisabledEnchant(enchant: Enchantment): Boolean {
         val key = enchant.key.key.lowercase(Locale.ROOT)

@@ -78,6 +78,7 @@ class PaintingAndParticleService(private val context: ObsidianContext) : Listene
                     world.spawnParticle(particle, origin.clone().add(0.0, 1.0, 0.0), 40, 0.7, 0.7, 0.7, 0.05)
                 }
             }
+
             "circle" -> {
                 for (step in 0 until 16) {
                     val delay = (step / 2L) + 1L
@@ -88,6 +89,7 @@ class PaintingAndParticleService(private val context: ObsidianContext) : Listene
                     }
                 }
             }
+
             "helix" -> {
                 for (step in 0 until 24) {
                     val delay = step.toLong() + 1L
@@ -101,6 +103,7 @@ class PaintingAndParticleService(private val context: ObsidianContext) : Listene
                     }
                 }
             }
+
             else -> {
                 // ring
                 context.scheduler.runAtLocation(origin) {

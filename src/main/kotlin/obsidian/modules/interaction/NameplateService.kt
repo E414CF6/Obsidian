@@ -13,8 +13,7 @@ import org.bukkit.event.entity.EntityTargetLivingEntityEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.scoreboard.Team
-import java.util.Locale
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**

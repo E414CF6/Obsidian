@@ -33,7 +33,6 @@ modules:
   interaction: true
   automation: true
   proxy: true
-  protect: true
   stats: true
   mobfarm: true
 
@@ -257,31 +256,6 @@ afk:
 discord:
   webhook-url: ""
   username: "Obsidian"
-
-protect:
-  default-radius: 10
-  max-radius: 100
-  consumer-flush-millis: 1000
-  rollback-items: true
-  rollback-entities: true
-  block-place: true
-  block-break: true
-  natural-break: true
-  explosions: true
-  pistons: true
-  block-burn: true
-  leaf-decay: true
-  tree-growth: true
-  buckets: true
-  liquid-flow: false
-  player-interactions: true
-  item-transactions: true
-  hopper-transactions: true
-  entity-kills: true
-  entity-spawns: true
-  player-messages: true
-  player-commands: true
-  player-sessions: true
 
 stats:
   cache-ttl-seconds: 15

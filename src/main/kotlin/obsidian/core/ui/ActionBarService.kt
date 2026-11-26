@@ -18,7 +18,6 @@ import java.util.concurrent.ConcurrentHashMap
 enum class ActionBarPriority(val weight: Int) {
     AFK(10),
     SELECTION_WAND(20),
-    PROTECT_INSPECTOR(30),
     VANISH(40),
     FLIGHT_CHARGE(50),
     JAIL(60),

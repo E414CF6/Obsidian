@@ -71,13 +71,16 @@ class ServerOpsService(private val context: ObsidianContext) : Listener {
                         .joinToString(", ") { "${it.key}=${it.value?.itemStack?.type?.name ?: "?"}" }
                     "#$num [Shaped] ${recipe.shape.joinToString("/")} ($map)"
                 }
+
                 is ShapelessRecipe -> {
                     val items = recipe.choiceList.joinToString(" + ") { it.itemStack.type.name }
                     "#$num [Shapeless] $items"
                 }
+
                 is CookingRecipe<*> -> {
                     "#$num [${recipe.javaClass.simpleName}] ${recipe.inputChoice.itemStack.type.name} (${recipe.cookingTime}t)"
                 }
+
                 else -> "#$num [${recipe.javaClass.simpleName}] -> ${recipe.result.type.name} x${recipe.result.amount}"
             }
         }
@@ -117,8 +120,14 @@ class ServerOpsService(private val context: ObsidianContext) : Listener {
                 skipWs()
                 if (pos >= s.length) break
                 value = when (s[pos]) {
-                    '+' -> { pos++; value + parseTerm() }
-                    '-' -> { pos++; value - parseTerm() }
+                    '+' -> {
+                        pos++; value + parseTerm()
+                    }
+
+                    '-' -> {
+                        pos++; value - parseTerm()
+                    }
+
                     else -> break
                 }
             }
@@ -131,14 +140,21 @@ class ServerOpsService(private val context: ObsidianContext) : Listener {
                 skipWs()
                 if (pos >= s.length) break
                 value = when (s[pos]) {
-                    '*' -> { pos++; value * parsePower() }
+                    '*' -> {
+                        pos++; value * parsePower()
+                    }
+
                     '/' -> {
                         pos++
                         val d = parsePower()
                         if (d == 0.0) throw IllegalArgumentException("Division by zero")
                         value / d
                     }
-                    '%' -> { pos++; value % parsePower() }
+
+                    '%' -> {
+                        pos++; value % parsePower()
+                    }
+
                     else -> break
                 }
             }

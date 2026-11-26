@@ -2,8 +2,8 @@
 
 **Obsidian** is an all-in-one server management plugin for **Paper `26.3`** (with **Folia**-compatible region
 scheduling), written from the ground up in **Kotlin**. It unifies essential survival/SMP gameplay systems, economy,
-moderation, block-level audit & rollback protection, proxy messaging, and an embedded RSA-authenticated web statistics
-API in a single modular JAR.
+moderation, proxy messaging, and an embedded RSA-authenticated web statistics API in a single modular JAR. (For land
+claims and forensic audit/rollback protection, pair with **Claims** and **Protector**.)
 
 ## Tech Stack & Requirements
 
@@ -16,7 +16,7 @@ API in a single modular JAR.
 
 ## Modules & Features
 
-All **16 modules** can be individually toggled under `modules:` in `config.yml`, and root command aliases can be toggled
+All **15 modules** can be individually toggled under `modules:` in `config.yml`, and root command aliases can be toggled
 via `commands.register-standalone-aliases`.
 
 | Module ID | Description | Primary Commands |
@@ -34,7 +34,6 @@ via `commands.register-standalone-aliases`.
 | `interaction` | Sitting, riding, player glow/scale customization, interactive block/entity commands, and item-attached PDC commands | `/sit`, `/ride`, `/shakeitoff`, `/glow`, `/scale`, `/ic`, `/attachcommand` |
 | `automation` | Scheduled tasks, lifecycle event actions, AFK detection/kick, server status, entity/item cleanup, and conditional commands | `/schedule`, `/afk`, `/status` (`/tps`), `/groundclean`, `/killall`, `/checkperm`, `/ifonline`, `/ifoffline` |
 | `proxy` | BungeeCord / Velocity plugin channel messaging (`bungeecord:main`) | `/server`, `/sendall`, `/bbroadcast` |
-| `protect` | Block, container, entity, explosion, liquid, and chat/command logging with inspector mode, lookup, rollback/restore previews, undo, and purge | `/co` (aliases: `/core`, `/coreprotect`) — subcommands: `inspect`, `lookup` (`l`), `near`, `page`, `rollback` (`rb`), `restore` (`rs`), `apply`, `cancel`, `undo`, `purge`, `status`, `consumer`, `teleport` (`tp`), `reload` |
 | `stats` | Native player/server telemetry aggregator (DB + vanilla `stats/` & `advancements/` JSON) and embedded RSA-SHA256 authenticated HTTP REST API | `/serve` (aliases: `/statsapi`, `/stats`) — subcommands: `status`, `reload`, `genkey`, `refresh` |
 | `mobfarm` | Per-entity/group chunk limits, auto-cleaner, dynamic hopper throttling, redstone activity tracker, chunk block limits, and wolf control | `/mfm` (`clean`, `list`, `limits`, `hoppers`, `redstone`, `reload`), `/mobclean`, `/mobreport` |
 
@@ -61,14 +60,15 @@ Base administrative commands: `/obsidian [info|version|reload|modules]`.
 On first startup, Obsidian extracts default configuration files into `plugins/Obsidian/`:
 
 - `config.yml` — Language (`en`/`ko`), database storage (`sqlite` / `mysql` / `mariadb`), module toggles,
-  cooldowns/warmups, chat/TabList/death messages, AFK, Protect logging toggles, and Stats HTTP server settings
+  cooldowns/warmups, chat/TabList/death messages, AFK, and Stats HTTP server settings
 - `kits.yml` — Starter/VIP kit definitions, cooldowns, costs, and items
 - `ranks.yml` — Playtime-based rank progression tiers and milestone rewards
 - `worth.yml` — Material sell/buy values for `/worth` and `/sell`
 - `customtext.yml` — Custom multi-line pages served via `/ctext <name>`
 - `schedules.yml` — Recurring automated command tasks
 - `eventactions.yml` — Event-driven commands (e.g., join/quit/first-join hooks)
-- `mobfarm.yml` — MobFarm entity/group limits, spawn reasons, auto-cleaner, hopper throttling, redstone tracking, and block limits
+- `mobfarm.yml` — MobFarm entity/group limits, spawn reasons, auto-cleaner, hopper throttling, redstone tracking, and
+  block limits
 - `locales/en_us.yml` / `locales/ko_kr.yml` — Localized MiniMessage strings
 
 ## Embedded Stats HTTP API & Web Dashboard
@@ -124,8 +124,8 @@ Drop `build/libs/Obsidian-1.0-SNAPSHOT.jar` into your Paper `26.3` server's `plu
 gradle test
 ```
 
-Test suites live under `src/test/kotlin/obsidian/` covering database repositories, helpers/parsers, protect
-inspection/rollback queries, and the stats HTTP API / RSA auth pipeline.
+Test suites live under `src/test/kotlin/obsidian/` covering database repositories, helpers/parsers, mobfarm,
+and the stats HTTP API / RSA auth pipeline.
 
 ### Launch a Local Paper `26.3` Test Server
 
@@ -148,7 +148,7 @@ Obsidian/
 │   │   │   ├── ObsidianPlugin.kt
 │   │   │   ├── core/           # Config, commands, database, GUI, locale, scheduler, text, users
 │   │   │   ├── integration/    # Vault, PlaceholderAPI, LuckPerms, Discord hooks
-│   │   │   └── modules/        # 15 feature modules (teleport .. protect, stats)
+│   │   │   └── modules/        # 15 feature modules (teleport .. mobfarm, stats)
 │   │   └── resources/          # plugin.yml, config.yml, locales/*.yml, module defaults
 │   └── test/kotlin/obsidian/   # JUnit 5 unit & SQLite/HTTP integration tests
 └── web/                        # Companion Next.js statistics dashboard

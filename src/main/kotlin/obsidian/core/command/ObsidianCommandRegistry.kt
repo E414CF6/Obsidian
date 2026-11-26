@@ -12,7 +12,7 @@ import io.papermc.paper.command.brigadier.CommandRegistrationFlag
 import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
 import io.papermc.paper.plugin.configuration.PluginMeta
-import java.util.Locale
+import java.util.*
 import java.util.function.Predicate
 
 /**
@@ -32,6 +32,7 @@ data class RegisteredSubcommand(
 class ObsidianCommandRegistry {
 
     private val subcommands = LinkedHashMap<String, RegisteredSubcommand>()
+
     @Volatile
     var localDispatcher: CommandDispatcher<CommandSourceStack> = CommandDispatcher()
         private set

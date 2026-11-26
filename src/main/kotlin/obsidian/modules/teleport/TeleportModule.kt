@@ -535,7 +535,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
             .executes { ctx ->
                 val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 var sent = 0
-                for (target in org.bukkit.Bukkit.getOnlinePlayers()) {
+                for (target in Bukkit.getOnlinePlayers()) {
                     if (target.uniqueId == sender.uniqueId) continue
                     tpaService.sendRequest(sender, target, TpaType.HERE)
                     sent++
@@ -557,7 +557,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 val sender = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 val dest = sender.location.clone()
                 var count = 0
-                for (target in org.bukkit.Bukkit.getOnlinePlayers()) {
+                for (target in Bukkit.getOnlinePlayers()) {
                     if (target.uniqueId == sender.uniqueId) continue
                     teleportService.teleport(target, dest, TeleportCause.COMMAND, ensureSafe = false)
                     count++
@@ -574,10 +574,10 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
                 val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
                 executeNear(player, 200)
             }.then(
-                Commands.argument("radius", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 2000))
+                Commands.argument("radius", IntegerArgumentType.integer(1, 2000))
                     .executes { ctx ->
                         val player = CommandHelper.requirePlayer(context, ctx.source.sender) ?: return@executes 0
-                        val radius = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "radius")
+                        val radius = IntegerArgumentType.getInteger(ctx, "radius")
                         executeNear(player, radius)
                     }).build()
         registrar.register(context.plugin.pluginMeta, nearNode, "List nearby players", emptyList())
@@ -586,7 +586,7 @@ class TeleportModule(private val context: ObsidianContext) : ObsidianModule {
     private fun executeNear(player: Player, radius: Int): Int {
         val origin = player.location
         val maxDistSq = radius.toDouble() * radius.toDouble()
-        val nearby = org.bukkit.Bukkit.getOnlinePlayers()
+        val nearby = Bukkit.getOnlinePlayers()
             .filter { it.uniqueId != player.uniqueId && it.world == origin.world }
             .mapNotNull { other ->
                 val distSq = origin.distanceSquared(other.location)

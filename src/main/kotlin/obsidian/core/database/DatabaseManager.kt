@@ -261,77 +261,6 @@ class DatabaseManager(
                 }
                 st.executeUpdate(
                     """
-                    CREATE TABLE IF NOT EXISTS `${table("protect_blocks")}` (
-                        `id` $autoIncId,
-                        `time` BIGINT NOT NULL,
-                        `actor` VARCHAR(64) NOT NULL,
-                        `world` VARCHAR(128) NOT NULL,
-                        `x` INT NOT NULL,
-                        `y` INT NOT NULL,
-                        `z` INT NOT NULL,
-                        `action` INT NOT NULL,
-                        `old_material` VARCHAR(64) NOT NULL,
-                        `old_blockdata` $longTextType,
-                        `old_extra` $longTextType,
-                        `new_material` VARCHAR(64) NOT NULL,
-                        `new_blockdata` $longTextType,
-                        `new_extra` $longTextType,
-                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
-                    );
-                    """.trimIndent()
-                )
-                st.executeUpdate(
-                    """
-                    CREATE TABLE IF NOT EXISTS `${table("protect_containers")}` (
-                        `id` $autoIncId,
-                        `time` BIGINT NOT NULL,
-                        `actor` VARCHAR(64) NOT NULL,
-                        `world` VARCHAR(128) NOT NULL,
-                        `x` INT NOT NULL,
-                        `y` INT NOT NULL,
-                        `z` INT NOT NULL,
-                        `action` INT NOT NULL,
-                        `material` VARCHAR(64) NOT NULL,
-                        `amount` INT NOT NULL,
-                        `item_base64` $longTextType NOT NULL,
-                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
-                    );
-                    """.trimIndent()
-                )
-                st.executeUpdate(
-                    """
-                    CREATE TABLE IF NOT EXISTS `${table("protect_entities")}` (
-                        `id` $autoIncId,
-                        `time` BIGINT NOT NULL,
-                        `actor` VARCHAR(64) NOT NULL,
-                        `world` VARCHAR(128) NOT NULL,
-                        `x` INT NOT NULL,
-                        `y` INT NOT NULL,
-                        `z` INT NOT NULL,
-                        `action` INT NOT NULL,
-                        `entity_type` VARCHAR(64) NOT NULL,
-                        `entity_snapshot` $longTextType,
-                        `rolled_back` BOOLEAN NOT NULL DEFAULT FALSE
-                    );
-                    """.trimIndent()
-                )
-                st.executeUpdate(
-                    """
-                    CREATE TABLE IF NOT EXISTS `${table("protect_messages")}` (
-                        `id` $autoIncId,
-                        `time` BIGINT NOT NULL,
-                        `actor` VARCHAR(64) NOT NULL,
-                        `world` VARCHAR(128) NOT NULL,
-                        `x` INT NOT NULL,
-                        `y` INT NOT NULL,
-                        `z` INT NOT NULL,
-                        `kind` INT NOT NULL,
-                        `message` $longTextType NOT NULL
-                    );
-                    """.trimIndent()
-                )
-                st.executeUpdate(
-                    """
                     CREATE TABLE IF NOT EXISTS `${table("name_history")}` (
                         `id` $autoIncId,
                         `uuid` VARCHAR(36) NOT NULL,
@@ -370,27 +299,6 @@ class DatabaseManager(
                     )
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}ips_ip` ON `${table("player_ips")}` (`ip`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_loc` ON `${table("protect_blocks")}` (`world`, `x`, `y`, `z`, `time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_actor` ON `${table("protect_blocks")}` (`actor`, `time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_blocks_time` ON `${table("protect_blocks")}` (`time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_containers_loc` ON `${table("protect_containers")}` (`world`, `x`, `y`, `z`, `time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_containers_actor` ON `${table("protect_containers")}` (`actor`, `time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_entities_loc` ON `${table("protect_entities")}` (`world`, `x`, `y`, `z`, `time`);"
-                    )
-                    st.executeUpdate(
-                        "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}protect_messages_actor` ON `${table("protect_messages")}` (`actor`, `time`);"
                     )
                     st.executeUpdate(
                         "CREATE INDEX IF NOT EXISTS `idx_${tablePrefix}votes_count` ON `${table("votes")}` (`vote_count` DESC);"
